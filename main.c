@@ -119,7 +119,7 @@ void print_memory()
     putchar('[');
     printf("\033[35m"); // RAW data section color
 
-    for (int i = 0; i != _mem_size; ++i) {
+    for (size_t i = 0; i != _mem_size; ++i) {
         fflush(stdout);
         msleep(SPEED);
         // Place the mem ratio separation
@@ -143,6 +143,48 @@ void print_memory()
     }
 
     if (_mem_size % LINE_WIDTH == 0)
+        putchar('\b');
+    printf("]\n");
+}
+
+
+
+/* print memory simulation's data (hex codes) */
+void print_mem_hex()
+{
+    const long SPEED = 3;
+    const size_t WIDTH = LINE_WIDTH / 4;
+    putchar('[');
+    printf("\033[35m"); // RAW data section color
+
+    for (size_t i = 0; i != _mem_size; ++i) {
+        fflush(stdout);
+        msleep(SPEED);
+
+        // Place the mem ratio separation
+        if (i == _raw_end)
+            printf("\033[m");
+
+        // draw last modified space as green
+        if (_registers.last_mod.start == i)
+            printf("\033[32m");
+        if (_registers.last_mod.end == i)
+            printf("\033[m");
+
+        // print mem
+        if (_mem[i] == EOF)
+            printf(" -- ");
+        else {
+            char hex[3];
+            ultobyte(_mem[i], hex);
+            printf(" %s ", hex);
+        }
+
+        if ((i + 1) % WIDTH == 0)
+            printf("\n ");
+    }
+
+    if (_mem_size % WIDTH == 0)
         putchar('\b');
     printf("]\n");
 }
@@ -187,9 +229,8 @@ struct set_var_args {
 void set_var(void *vargp)
 {
     struct set_var_args args = *(struct set_var_args *)vargp;
-    while (*(args.data_stream++) != EOF) {
-        _mem[*args.pointer] = (*args.data_stream);
-    }
+    while (*(args.data_stream) != EOF)
+        _mem[*args.pointer] = (*(args.data_stream++));
 }
 
 
@@ -213,6 +254,7 @@ void print_code()
     };
 
     printf("PC: %lu, Stack Tail: %lu\n", _registers.pc, _registers.stack_tail);
+    putchar('\n');
     for (int i = 0; i < sizeof(commands) / sizeof(struct command); i++) {
         msleep(100);
         printf("%s\n", commands[i].line);
@@ -238,4 +280,7 @@ void boot()
 
     print_memory();
     print_code();
+    putchar('\n');
+    print_mem_hex();
+    putchar('\n');
 }
