@@ -37,6 +37,8 @@ void boot(); /* Boot (virtual) OS emulation */
  */
 int main(int argc, char **argv)
 {
+    utils_init(); /* Setup lib */
+
     /* Filter args */
     for (argv++; --argc != 0; ++argv)
         if (**argv == '-')
@@ -48,7 +50,7 @@ int main(int argc, char **argv)
                     ++argv;
                     long size = strtol(*argv, argv + 1, 10);
                     if (size <= 0)
-                        perr("Invalid memory size, argument ignored, fallback to default (1KB)");
+                        print_err("Invalid memory size, argument ignored, fallback to default (1KB)");
                     else
                         _mem_size = size;
                 }; break;
@@ -56,8 +58,9 @@ int main(int argc, char **argv)
                     skip = true;
                     break;
                 default:
-                    perr("Invalid argument ignored!");
+                    print_err("Invalid argument ignored!");
             }
+
 
     /* Allocation starts here */
     int memory[_mem_size];
@@ -120,8 +123,11 @@ void print_memory()
     printf("\033[35m"); // RAW data section color
 
     for (size_t i = 0; i != _mem_size; ++i) {
-        fflush(stdout);
-        msleep(SPEED);
+        if (!skip) {
+            fflush(stdout);
+            msleep(SPEED);
+        }
+
         // Place the mem ratio separation
         if (i == _raw_end)
             printf("\033[m");
@@ -158,8 +164,10 @@ void print_mem_hex()
     printf("\033[35m"); // RAW data section color
 
     for (size_t i = 0; i != _mem_size; ++i) {
-        fflush(stdout);
-        msleep(SPEED);
+        if (!skip) {
+            fflush(stdout);
+            msleep(SPEED);
+        }
 
         // Place the mem ratio separation
         if (i == _raw_end)
@@ -204,7 +212,7 @@ void enter_scope(void *vargp)
 }
 
 
-void none(void *) {}
+void none(void *vargp) {}
 
 
 /* Increments Program Counter */
@@ -256,19 +264,97 @@ void print_code()
     printf("PC: %lu, Stack Tail: %lu\n", _registers.pc, _registers.stack_tail);
     putchar('\n');
     for (int i = 0; i < sizeof(commands) / sizeof(struct command); i++) {
-        msleep(100);
+        if (!skip)
+            msleep(100);
         printf("%s\n", commands[i].line);
         commands[i].call(commands[i].args);
     }
+}
+
+#include <uchar.h>
+//#include <stdarg.h>
+void print_chicko(char *s, ...)
+{
+    //va_list ap; // Não implementei pq não foi necessário.
+    //va_start(ap, count);
+    printf("🐣 \033[32;43m");
+    int i = 0;
+    if (skip)
+        printf("%s", s);
+    else while (*s != '\0') {
+        fflush(stdout);
+        msleep(15);
+        putchar(*(s++));
+        if (*s != ' ')
+            i++;
+        // va_arg(ap, <type>);
+    }
+    printf("\033[m\n");
+    //va_end(ap);
+}
+
+
+static struct key_input_event {
+    int scancode;
+    bool key_pressed;
+} *key_input_events = NULL;
+static size_t key_input_n = 0;
+static bool _input_event_guard;
+
+/* Tracks keyboard input events. */
+void *track_keyboard_input(void *_vargp)
+{
+    for (;;) {
+        int code = getchar();
+        if (!_input_event_guard && key_input_events != NULL) {
+            _input_event_guard = true;
+            struct key_input_event *kie = key_input_events;
+
+            for (int i = key_input_n; i != 0; i--)
+                if (kie->scancode != code)
+                    kie++;
+                else
+                    kie->key_pressed = true;
+
+            _input_event_guard = false;
+        }
+    }
+    return NULL;
+}
+
+
+void wait_input_event(int scancode)
+{
+    struct key_input_event kie = { .scancode=scancode, .key_pressed=false};
+
+    // Set input event
+    while (_input_event_guard);
+    _input_event_guard = true;
+    key_input_n = 1;
+    key_input_events = &kie;
+    _input_event_guard = false;
+
+    while (!kie.key_pressed); // Wait
+
+    // Unset event
+    while (_input_event_guard);
+    _input_event_guard = true;
+    key_input_n = 0;
+    key_input_events = NULL;
+    _input_event_guard = false;
 }
 
 
 /* boot the (virtual) mini operational system emulation */
 void boot()
 {
+    pthread_t input_event;
+    disable_canonical();
+    pthread_create(&input_event, NULL, track_keyboard_input, NULL);
+
     if (!skip) {
         pthread_t thread_ids[2];
-        size_t timeout = 3000; // 3sec
+        size_t timeout = 3 * SEC;
         pthread_create(thread_ids, NULL, wait, &timeout);
         pthread_create(thread_ids + 1, NULL, dots, NULL);
         // pthread_join(thread_ids[0], NULL);
@@ -276,11 +362,25 @@ void boot()
 
         printf("\33[2K\r"); // erase last line
     }
+
+
     printf("\033[32m""Mini (virtual) Operational System emulation started!\033[m\n");
 
     print_memory();
     print_code();
     putchar('\n');
     print_mem_hex();
+
     putchar('\n');
+
+    print_chicko("Olá, eu sou o galinho m(v)x, vou ser o seu guia nessa simulação!\n\33[30;30m"
+                "\t\t\t\033[32;43m" "Pressione \033[41;97m[BARRA DE ESPAÇO]\033[32;43m para continuar!");
+    wait_input_event(' ');
+
+    printf("\33[1A");
+    printf("\33[2K\r");
+    printf("\33[1A");
+    printf("\33[2K\r");
+    print_chicko("Nesta simulação do nosso Mini (virtual) Sistema Operacional descobriremos como ocorre o gerenciamento de memória em um OS.");
+    enable_canonical(); // Returns terminal to default state
 }

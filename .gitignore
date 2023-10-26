@@ -33,3 +33,7 @@
 
 # IDE files
 .vscode/
+
+# Working files
+*.tmp
+*.old
