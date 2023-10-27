@@ -9,6 +9,16 @@
 #define LINE_WIDTH (_1KB / 8)
 #define DEF_MEM_SIZE LINE_WIDTH // default memory size
 
+/* Command Line Interface Styles */
+#define CLIS_RESET "\33[0;49;49m"
+#define CLIS_FOCUS "\033[1;32m"
+#define CLIS_CHICKO "\33[32;43m"
+#define CLIS_CK_BOLD(S) "\33[1m" S "\33[0;32;43m"
+#define CLIS_CK_UNDER(S) "\33[4m" S "\33[0;32;43m"
+#define CLIS_CK_STRIKE(S) "\33[9m" S "\33[0;32;43m"
+#define CLIS_CK_ITALICS(S) "\33[3m" S "\33[0;32;43m"
+#define CLIS_CK_EMPHASIS(S) "\33[41;97m" S "\33[32;43m"
+
 static int *_mem; // memory starting pointer
 static size_t _mem_size = DEF_MEM_SIZE; // memory size (bytes)
 const float _mem_ratio = .7; // the ratio of memory allocated against RAW data
@@ -28,6 +38,8 @@ static struct {
     char *scope_name;
 } _registers;
 
+#define SKIP_ALL 1
+#define SKIP_REFRESH 2
 static bool skip = false; /* skip simulation animations */
 void boot(); /* Boot (virtual) OS emulation */
 
@@ -55,7 +67,7 @@ int main(int argc, char **argv)
                         _mem_size = size;
                 }; break;
                 case 's':
-                    skip = true;
+                    skip = SKIP_ALL;
                     break;
                 default:
                     print_err("Invalid argument ignored!");
@@ -242,33 +254,58 @@ void set_var(void *vargp)
 }
 
 
-/* Emulates a process step-by-step */
+struct command {
+    char line[LINE_WIDTH];
+    void (* call)(void *);
+    void *args;
+};
+struct {
+    size_t step; /* Step of execution */
+    size_t size; /* #of steps */
+    struct command *commands;
+} emu_reg;       /* Registers of emulation */
+
+
+/* Emulates a process step. */
 void print_code()
 {
-    struct enter_scope_args esa = {.pointer=0, .scope_name="main"};
-    int stream[] = { (char)0, EOF };
-    struct set_var_args sva = {.pointer=&(_registers.stack_tail), .data_stream=stream};
-
-    struct command {
-        char line[LINE_WIDTH];
-        void (* call)(void *);
-        void *args;
-    } commands[] = {
-        {.line="int main()", .call=enter_scope, .args=&esa},
-        {.line="{", .call=none, .args=NULL},
-        {.line="\t""int i;", .call=inc_sp, .args=NULL},
-        {.line="\t""i = 0;", .call=set_var, .args=&sva},
-        {.line="}", .call=none, .args=NULL},
-    };
-
     printf("PC: %lu, Stack Tail: %lu\n", _registers.pc, _registers.stack_tail);
     putchar('\n');
-    for (int i = 0; i < sizeof(commands) / sizeof(struct command); i++) {
+
+    for (size_t i = 0; i < emu_reg.size; i++) {
         if (!skip)
             msleep(100);
-        printf("%s\n", commands[i].line);
-        commands[i].call(commands[i].args);
+        printf("%s%lu: %s\n" CLIS_RESET, (emu_reg.step == (i + 1) ? CLIS_FOCUS ">" : " "),
+               (i + 1), emu_reg.commands[i].line);
     }
+}
+
+
+
+/* Setups a process emulation execution. */
+void setup_proc(struct command *commands, size_t size)
+{
+    if (emu_reg.commands != commands) {
+        emu_reg.commands = commands;
+        emu_reg.size = size;
+        emu_reg.step = 0;
+    }
+}
+
+
+/* Runs next step of execution. Returns 1 if running or 0 otherwise */
+int step_proc()
+{
+    if (emu_reg.step < emu_reg.size) {
+        struct command *com = emu_reg.commands + emu_reg.step;
+        if (com->call)
+            com->call(com->args);
+        emu_reg.step++;
+
+        return true;
+    }
+
+    return false;
 }
 
 
@@ -323,29 +360,35 @@ void wait_input_event(int scancode)
 }
 
 
-/* Command Line Interface Styles */
-#define CLIS_RESET "\33[30;30m"
-#define CLIS_CHICKO "\33[32;43m"
-#define CLIS_CK_BOLD(S) "\33[1m" S "\33[0;32;43m"
-#define CLIS_CK_UNDER(S) "\33[4m" S "\33[0;32;43m"
-#define CLIS_CK_STRIKE(S) "\33[9m" S "\33[0;32;43m"
-#define CLIS_CK_ITALICS(S) "\33[3m" S "\33[0;32;43m"
-#define CLIS_CK_EMPHASIS(S) "\33[41;97m" S "\33[32;43m"
-
 #include <uchar.h>
-//#include <stdarg.h>
-void print_chicko(char *s, ...)
+#include <stdarg.h>
+/* Print a dialog by chicko. Escape sequences %
+ * %a: pass a function call (must receive no args and return void),
+ * dialog will stop until completed. */
+void print_chicko(char const *s, ...)
 {
 #define CHECK_CHAR(C)\
 
-    //va_list ap; // Não implementei pq não foi necessário.
-    //va_start(ap, count);
+    va_list ap; /* Variable argument list */
+    va_start(ap, s); /* Point to first arg. */
+
     printf("🐣 " CLIS_CHICKO);
+    int arg = 0;
     size_t lines = 1;
 
     while (*s != '\0') {
         switch (*s) {
             case '\n': lines++; break;
+            case '%':
+                switch (*++s) {
+                    case 'a':
+                        void (* action)(void) = va_arg(ap, void (*)(void));
+                        fflush(stdout); // In case of skip mode
+                        action();
+                        ++s;
+                        break;
+                    default: break;
+                }
                 default: break;
         }
         if (!skip) {
@@ -353,7 +396,6 @@ void print_chicko(char *s, ...)
             msleep(15);
         }
         putchar(*(s++));
-        // va_arg(ap, <type>);
     }
     printf("\033[m\n");
 
@@ -361,7 +403,7 @@ void print_chicko(char *s, ...)
 
     while (lines-- != 0)
         printf("\33[1A\33[2K\r"); // Clear last line
-    //va_end(ap);
+    va_end(ap);
 }
 
 
@@ -382,156 +424,216 @@ void boot()
 
         printf("\33[2K\r"); // Erase last line
     }
+    struct command proc_hello_world[] = {
+        { .line="print(\"Hello\")", .call=NULL, .args=NULL },
+        { .line="putchar(' ')", .call=NULL, .args=NULL },
+        { .line="print(\"World\")", .call=NULL, .args=NULL },
+    };
+    struct enter_scope_args esa = {.pointer=0, .scope_name="main"};
+    int stream[] = { (char)0, EOF };
+    struct set_var_args sva = {.pointer=&_registers.stack_tail, .data_stream=stream};
+    struct command proc_tuto[] = {
+        {.line="int main() {", .call=enter_scope, .args=&esa},
+        {.line="\t""int i;", .call=inc_sp, .args=NULL},
+        {.line="\t""i = 0;", .call=set_var, .args=&sva},
+        {.line="}", .call=none, .args=NULL},
+    };
+    
+    emu_reg.commands = proc_hello_world;
+    emu_reg.size = sizeof(proc_hello_world) / sizeof(struct command);
+    emu_reg.step = emu_reg.size + 1;
 
-    printf("\033[32m""Mini (virtual) Operational System emulation started!\033[m\n");
+#define MAX_STEP 25
+    int skip = -1;
+    for (size_t step = 0; step != MAX_STEP; step++) {
+        printf("\033[32m"
+               "Mini (virtual) Operational System emulation started!\033[m\n");
 
-    print_memory();
-    print_code();
-    putchar('\n');
-    print_mem_hex();
+        step -= step_proc();
+        print_memory();
+        print_code();
+        putchar('\n');
+        print_mem_hex();
+        putchar('\n');
 
-    putchar('\n');
+        switch (step) {
+            case 0: {
+                print_chicko("Hello World!" CLIS_RESET "\n" CLIS_CHICKO
+                            "Eu sou o galinho m(v)x, vou ser o seu guia nessa simulação!"
+                            CLIS_RESET "\n\t\t" CLIS_CHICKO "Pressione "
+                            CLIS_CK_EMPHASIS("[BARRA DE ESPAÇO]") " para continuar!");
+                print_chicko("Nesta simulação do nosso Mini (virtual) Sistema Operacional "
+                            "descobriremos como ocorre o gerenciamento de memória em um OS.");
+            } break;
+            case 1: {
+                print_chicko("Na barra superior está o espaço utilizado na sua memória no momento.");
+                // TODO -> Destacar a barra superior
+            } break;
+            case 2: {
+                print_chicko("No centro você verá o código do processo que iremos executar no nosso sistema.");
+                // TODO -> Destacar barra do centro
+            } break;
+            case 3: {
+                print_chicko("Logo abaixo você pode ver o que acontece com a memória conforme o processo é executado.");
+                // TODO -> Destacar o inferior
+            } break;
+            case 4: {
+                print_chicko("Pelo propósito dessa simulação, iremos focar apenas na memória do espaço do usuário."
+                            CLIS_RESET "\n" CLIS_CHICKO "Então eu escondi pra você a parte referente ao interior "
+                            "do sistema. 😳 " CLIS_CK_STRIKE("Favor, respeitar ok? 👉👈"));
+                setup_proc(proc_tuto, sizeof(proc_tuto) / sizeof(struct command));
+                step++;
+            } break;
+            case 5: {
+                if (skip != 5)
+                    print_chicko("Um " CLIS_CK_EMPHASIS("processo") " selvagem apareceu!");
+                print_chicko("Para controlar a execução pressione o botão " CLIS_CK_EMPHASIS("[ESPAÇO]")
+                            " e iremos mostrar o que acontece. " CLIS_CK_BOLD("Tente!"));
+                skip = 5;
+            } break;
+            case 6: {
+                print_chicko("Muito bem, você deve ter entendido. " CLIS_CK_ITALICS("Certo?"));
+                print_chicko("Agora iremos mostrar o que acontecesse quando temos um loop no programa.");
+                // TODO -> <loop inicia>
+                // TODO -> <loop não para>
+            } break;
+            case 7: {
+                // TODO -> Implementar o "travamento" do chicko no método print em %Z (frozen) (continua até pressionar espaço)
+                print_chicko("Oh no! Que problemão, a nossa memória vai acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr... ");
+            } break;
+            case 8: {
+                print_chicko(CLIS_CK_BOLD("Droga, eu travei!") " Isso que acabou de acontecer é "
+                            "chamado de \"Stack Overflow\"... " CLIS_CK_ITALICS("Não o site bobão!"));
 
-    print_chicko("Olá, eu sou o galinho m(v)x, vou ser o seu guia nessa simulação!" CLIS_RESET "\n"
-                "\t\t\t" CLIS_CHICKO "Pressione " CLIS_CK_EMPHASIS("[BARRA DE ESPAÇO]") " para continuar!");
+                print_chicko("Bem, podemos resolver o problema anterior usando uma estratégia "
+                            "chamada \"swapping\", eu vou mostrar pra você.");
+                // TODO -> <mostrar swap>
+            }; break;
+            case 9: {
+                print_chicko("Esta nova partição aqui é chamada de... " CLIS_CK_ITALICS("isso ")
+                             CLIS_CK_EMPHASIS("SWAP") ",\né basicamente um arquivo no disco do PC. "
+                             "Vamos ver agora!");
+                // TODO -> <loop continua e swap é preenchido, e para antes de travar>
+            }
+            case 10: {
+                print_chicko(CLIS_CK_BOLD("Ótimo!"));
+                print_chicko("Mas eu posso fazer mais do que isso. Agora vamos ver o que "
+                            "acontecesse quando há vários programas sendo executados.");
+                // TODO -> <carrega dois códigos main na tela>
+            }; break;
+            case 11: {
+                print_chicko("Queremos tirar proveito dos recursos da máquina, então faremos "
+                            "esses dois programas serem carregados simultaneamente.");
 
-    print_chicko("Nesta simulação do nosso Mini (virtual) Sistema Operacional "
-                 "descobriremos como ocorre o gerenciamento de memória em um OS.");
-    print_chicko("Na barra superior está o espaço utilizado na sua memória no momento.");
-    // TODO -> Destacar a barra superior
+                print_chicko("Poderemos então executar um após o outro!");
+                // TODO -> <mostrar execução single thread>
+            }; break;
+            case 12: {
+                print_chicko("Ou alternar entre os dois, em sequência. Isso é útil "
+                            "principalmente quando há múltiplas threads.");
+                // TODO -> <mostrar execução multithread>
+            }; break;
+            case 13: {
+                print_chicko("É isso, eu tenho dois corações! h3h3");
 
-    print_chicko("No centro você verá o código do processo que iremos executar no nosso sistema.");
-    // TODO -> Destacar barra do centro
+                print_chicko("Você deve ter notado os endereços que os programas estão usando colidem.\n"
+                            "Na verdade, nós não estamos usando os endereços da memória física.\n"
+                            "Isso facilita muitos processos pra nós.");
+                print_chicko("Esse endereço (virtual) pode ser atribuído em tempo de compilação,\n"
+                            "tempo de carga, ou em tempo de execução, chamamos ele de memória lógica.");
+                print_chicko("Eu tenho um circuito especial pra lidar com isso no meu cérebro.\n"
+                            CLIS_CK_EMPHASIS("O MMU!") " Ele faz a tradução dos endereços e também "
+                            "a proteção deles entre processos.\nNote que o endereçamento físico"
+                            "é realocado sempre que manipulamos a\nlocalização dos processos"
+                            "na memória, para um swap por exemplo.");
+                // TODO -> <Stack Overflow em um dos processos>
+            }; break;
+            case 14: {
+                print_chicko("Olhe, temos um problema! O segundo programa não pode continuar\n"
+                            "por quê não há espaço o suficiente na máquina.");
+                print_chicko("Podemos resolver isso, balanceando o uso da memória.");
+                // TODO -> <mostrar alocação de tamanhos diferentes>
+            }; break;
+            case 15: {
+                print_chicko("Ok! Agora vou te mostrar algo legal... Algo PERIGOSO!!! ☠️ "
+                            CLIS_CK_UNDER("RADICAL! 😎 ") CLIS_CK_EMPHASIS("Ponteiros"));
+                // TODO -> <carregar demonstração da memória heap>
+            } break;
+            case 16: {
+                print_chicko("Esse espaço no final é chamado de heap (ou monte), é aqui que\n"
+                            "fica a memória adicional. Muitos programas utilizam a heap\n"
+                            "quando querem crescer variavelmente, é um pouco de trabalho\n"
+                            "para mim, mas é um trabalho honesto 🤠.");
+                // TODO -> <simular erro de segmentation fault
+            }; break;
+            case 17: {
+                print_chicko("Espere, você não deveria acessar esta memória, o outro programa\n"
+                            "vai ter problema. " CLIS_CK_BOLD("Erro!!! " CLIS_CK_EMPHASIS("Erro!!")));
+                print_chicko("Como eu esperava, esse é mais um caso de " CLIS_CK_BOLD("Segmentation fault.")
+                            "\nUm programador responsável nunca permitiria ponteiros soltos assim.\n"
+                            "Eu não permitirei acessar além da fronteira. "
+                            CLIS_CK_EMPHASIS("Segmentation fault!") " Ouviu bem? 😠");
+                // TODO -> <carregar código de acesso null>
+            }; break;
+            case 18: {
+                print_chicko("Espere, esse endereço não existe! O endereço 00 é especial, "
+                            "nós chamamos ele de" CLIS_CK_BOLD("NULL") ".\nÉ uma exceção especial "
+                            "pra facilitar o trabalho de alguns programadores.\n"
+                            "Nós chamamos isso de " CLIS_CK_EMPHASIS("Null pointer Exception"));
 
-    print_chicko("Logo abaixo você pode ver o que acontece com a memória conforme o processo é executado.");
-    // TODO -> Destacar o inferior
+                print_chicko("Bem, você já entendeu como processos funcionam. Vamos ignorar\n"
+                            "esta parte por enquanto, e focar em entender o que acontece\n"
+                            "quando há " CLIS_CK_BOLD("muitos processos") " na memória!");
+                // TODO -> <simulação com vários processos (sem código), alguns encerrando>
+            }; break;
+            case 19: {
+                print_chicko("Precisamos encaixar este novo processo, mas não há espaço o\n"
+                            "suficiente no momento, nós vamos então esperar pelos outros\n"
+                            "encerrarem para inserí-lo. Ou, eu posso mover alguns deles de\n"
+                            "menor prioridade para a swap, hihi 🤓");
+                // TODO -> <simulação com vários processos, mais deles encerrando>
+            }; break;
+            case 20: {
+                print_chicko("Agora que temos espaço o suficiente podemos colocá-lo...\n"
+                            "Mas onde vamos por ele?");
+                // TODO -> <simular first fit (alocando no começo)>
+            }; break;
+            case 21: {
+                print_chicko("Faz sentido, no primeiro espaço. Mas, Bem, a gente pode se\n"
+                            "preparar melhor para este problema do espaço no futuro.\n"
+                            "Que tal inserirmos em outro local?! 🧐");
+                // TODO -> <simulação best fit>
+            }; break;
+            case 22: {
+                print_chicko("Eu decidi colocar ele no melhor lugar, onde o processo vai deixar\n"
+                            "lacunas de espaço menores. Mas nós podemos fazer um pouco diferente!");
+                // TODO -> <simulação worst fit>
+            }; break;
+            case 23: {
+                print_chicko("Dessa vez eu decidi colocar ele no pior lugar? Por quê, você me pergunta?");
+                print_chicko("Olha, os próximos processos vão ter tooodo esse espaço livre\n"
+                            "pra caber ali, isso é bom, não é mesmo?");
 
-    print_chicko("Pelo propósito dessa simulação, iremos focar apenas na memória do espaço do usuário."
-                 CLIS_RESET "\n" CLIS_CHICKO "Então eu escondi pra você a parte referente ao interior "
-                 "do sistema. 😳 " CLIS_CK_STRIKE("Favor, respeitar ok? 👉👈"));
+                print_chicko("Bem, eu não estou satisfeito. Ainda há espaço que não estamos usando...\n"
+                            "E que tal se dividirmos o processo em pedaços?");
+                // TODO -> <simulação de quebra do processo>
+            }; break;
+            case 24: {
+                print_chicko("Quanto aos endereços (virtuais) internos do programa, não se preocupe!\n"
+                            "Nós podemos usar uma tabela pra registrar a quebra, e deixamos a\n"
+                            "conversão ser feita por mim em uma "
+                            CLIS_CK_EMPHASIS("TLB (Translation look-aside buffer)")
+                            "\ne meu poderoso " CLIS_CK_UNDER("MMU") "! h3h3");
+                // TODO -> <apresentação da tabela de endereços>
+            } break;
+            case MAX_STEP: {
+                print_chicko("Pronto! Agora sim!");
 
-    print_chicko("Para controlar a execução pressione o botão " CLIS_CK_EMPHASIS("[ESPAÇO]")
-                 " e iremos mostrar o que acontece. " CLIS_CK_BOLD("Tente!"));
-    // TODO -> Passo-a-passo do código "hello world"
-
-    print_chicko("Muito bem, você deve ter entendido. " CLIS_CK_ITALICS("Certo?"));
-    print_chicko("Agora iremos mostrar o que acontecesse quando temos um loop no programa.");
-    // TODO -> <loop inicia>
-    // TODO -> <loop não para>
-
-    // TODO -> Implementar o "travamento" do chicko no método print em %Z (frozen) (continua até pressionar espaço)
-    print_chicko("Oh no! Que problemão, a nossa memória vai acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr... ");
-
-    print_chicko(CLIS_CK_BOLD("Droga, eu travei!") " Isso que acabou de acontecer é "
-                 "chamado de \"Stack Overflow\"... " CLIS_CK_ITALICS("Não o site bobão!"));
-
-    print_chicko("Bem, podemos resolver o problema anterior usando uma estratégia "
-                 "chamada \"swapping\", eu vou mostrar pra você.");
-    // TODO -> <mostrar swap>
-
-    print_chicko("Esta nova partição aqui é chamada de... " CLIS_CK_ITALICS("isso ")
-                     CLIS_CK_EMPHASIS("SWAP") ",\né basicamente um arquivo no disco do PC. "
-                     "Vamos ver agora!");
-    // TODO -> <loop continua e swap é preenchido, e para antes de travar>
-    print_chicko(CLIS_CK_BOLD("Ótimo!"));
-
-    print_chicko("Mas eu posso fazer mais do que isso. Agora vamos ver o que "
-                 "acontecesse quando há vários programas sendo executados.");
-    // TODO -> <carrega dois códigos main na tela>
-
-    print_chicko("Queremos tirar proveito dos recursos da máquina, então faremos "
-                 "esses dois programas serem carregados simultaneamente.");
-
-    print_chicko("Poderemos então executar um após o outro!");
-    // TODO -> <mostrar execução single thread>
-
-    print_chicko("Ou alternar entre os dois, em sequência. Isso é útil "
-                 "principalmente quando há múltiplas threads.");
-    // TODO -> <mostrar execução multithread>
-
-    print_chicko("É isso, eu tenho dois corações! h3h3");
-
-    print_chicko("Você deve ter notado os endereços que os programas estão usando colidem.\n"
-                 "Na verdade, nós não estamos usando os endereços da memória física.\n"
-                 "Isso facilita muitos processos pra nós.");
-    print_chicko("Esse endereço (virtual) pode ser atribuído em tempo de compilação,\n"
-                 "tempo de carga, ou em tempo de execução, chamamos ele de memória lógica.");
-    print_chicko("Eu tenho um circuito especial pra lidar com isso no meu cérebro.\n"
-                 CLIS_CK_EMPHASIS("O MMU!") " Ele faz a tradução dos endereços e também "
-                 "a proteção deles entre processos.\nNote que o endereçamento físico"
-                 "é realocado sempre que manipulamos a\nlocalização dos processos"
-                 "na memória, para um swap por exemplo.");
-
-    // TODO -> <Stack Overflow em um dos processos>
-    print_chicko("Olhe, temos um problema! O segundo programa não pode continuar\n"
-                 "por quê não há espaço o suficiente na máquina.");
-    print_chicko("Podemos resolver isso, balanceando o uso da memória.");
-    // TODO -> <mostrar alocação de tamanhos diferentes>
-
-    print_chicko("Ok! Agora vou te mostrar algo legal... Algo PERIGOSO!!! ☠️ "
-                 CLIS_CK_UNDER("RADICAL! 😎 ") CLIS_CK_EMPHASIS("Ponteiros"));
-    // TODO -> <carregar demonstração da memória heap>
-
-    print_chicko("Esse espaço no final é chamado de heap (ou monte), é aqui que\n"
-                 "fica a memória adicional. Muitos programas utilizam a heap\n"
-                 "quando querem crescer variavelmente, é um pouco de trabalho\n"
-                 "para mim, mas é um trabalho honesto 🤠.");
-
-    // TODO -> <simular erro de segmentation fault
-    print_chicko("Espere, você não deveria acessar esta memória, o outro programa\n"
-                 "vai ter problema. " CLIS_CK_BOLD("Erro!!! " CLIS_CK_EMPHASIS("Erro!!")));
-    print_chicko("Como eu esperava, esse é mais um caso de " CLIS_CK_BOLD("Segmentation fault.")
-                 "\nUm programador responsável nunca permitiria ponteiros soltos assim.\n"
-                 "Eu não permitirei acessar além da fronteira. " CLIS_CK_EMPHASIS("Segmentation fault!")
-                 " Ouviu bem? 😠");
-
-    // TODO -> <carregar código de acesso null>
-    print_chicko("Espere, esse endereço não existe! O endereço 00 é especial, nós chamamos ele de\n"
-                 CLIS_CK_BOLD("NULL") ". É uma exceção especial pra facilitar o trabalho de alguns\n"
-                 "programadores. Nós chamamos isso de " CLIS_CK_EMPHASIS("Null pointer Exception"));
-
-    print_chicko("Bem, você já entendeu como processos funcionam. Vamos ignorar\n"
-                 "esta parte por enquanto, e focar em entender o que acontece\n"
-                 "quando há " CLIS_CK_BOLD("muitos processos") " na memória!");
-    // TODO -> <simulação com vários processos (sem código), alguns encerrando>
-
-    print_chicko("Precisamos encaixar este novo processo, mas não há espaço o\n"
-                 "suficiente no momento, nós vamos então esperar pelos outros\n"
-                 "encerrarem para inserí-lo. Ou, eu posso mover alguns deles de\n"
-                 "menor prioridade para a swap, hihi 🤓");
-    // TODO -> <simulação com vários processos, mais deles encerrando>
-
-    print_chicko("Agora que temos espaço o suficiente podemos colocá-lo...\n"
-                 "Mas onde vamos por ele?");
-    // TODO -> <simular first fit (alocando no começo)>
-
-    print_chicko("Faz sentido, no primeiro espaço. Mas, Bem, a gente pode se\n"
-                 "preparar melhor para este problema do espaço no futuro.\n"
-                 "Que tal inserirmos em outro local?! 🧐");
-    // TODO -> <simulação best fit>
-
-    print_chicko("Eu decidi colocar ele no melhor lugar, onde o processo vai deixar\n"
-                 "lacunas de espaço menores. Mas nós podemos fazer um pouco diferente!");
-    // TODO -> <simulação worst fit>
-
-    print_chicko("Dessa vez eu decidi colocar ele no pior lugar? Por quê, você me pergunta?");
-    print_chicko("Olha, os próximos processos vão ter tooodo esse espaço livre\n"
-                 "pra caber ali, isso é bom, não é mesmo?");
-
-    print_chicko("Bem, eu não estou satisfeito. Ainda há espaço que não estamos usando...\n"
-                 "E que tal se dividirmos o processo em pedaços?");
-    // TODO -> <simulação de quebra do processo>
-
-    print_chicko("Quanto aos endereços (virtuais) internos do programa, não se preocupe!\n"
-                 "Nós podemos usar uma tabela pra registrar a quebra, e deixamos a\n"
-                 "conversão ser feita por mim em uma "
-                 CLIS_CK_EMPHASIS("TLB (Translation look-aside buffer)")
-                 "\ne meu poderoso " CLIS_CK_UNDER("MMU") "! h3h3");
-    // TODO -> <apresentação da tabela de endereços>
-
-    print_chicko("Pronto! Agora sim!");
- 
-    print_chicko("Então, é isso... Até mais!");
-
+                print_chicko("Então, é isso... Até mais!");
+            }; break;
+            default: break;
+        }
+        printf("\33[2J\033[0;0f"); // Clear screen and go to start position
+    }
     enable_canonical(); // Returns terminal to default state
 }

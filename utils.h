@@ -6,6 +6,7 @@
 /* Print Warning */
 #define print_war(S, ARGS...) \
         fprintf(stderr, "\033[31m""Warning: " S "\033[m\n" __VA_OPT__(,) ARGS)
+#define forever for (;;) /* Infinity loop */
 
 #define bool uint8_t /* boolean */
 #define true 1
