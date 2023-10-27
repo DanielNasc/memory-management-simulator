@@ -13,7 +13,7 @@
 
 - Pelo propósito dessa simulação, iremos focar apenas na memória do espaço do usuário. Então vou escondi pra você a parte referente ao interior do sistema. <vergonha> Favor, respeitar ok? <blushed>
 
-- Para controlar a execução pressione o botão [ESPAÇO] e iremos mostrar o que acontesse. Tente!
+- Para controlar a execução pressione o botão [ESPAÇO] e iremos mostrar o que acontece. Tente!
 
 
 ## Continuação após código "hello world": Loop (Recursão) e Stack Oveflow
@@ -25,13 +25,13 @@
 <loop inicia>
 <loop não para>
 
-- Oh no! Que problemão, a nossa memória vai acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr... (continua até precionar espaço)
+- Oh no! Que problemão, a nossa memória vai acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr... (continua até pressionar espaço)
 
 - Droga, eu travei, isso que acabou de acontecer é chamado de "Stack Overflow", não o site bobão!
 
 ## Swap
 
-- Bem, podemos resolver o problema anterior usando uma extratégia chamada "swapping", eu vou mostrar pra você.
+- Bem, podemos resolver o problema anterior usando uma estratégia chamada "swapping", eu vou mostrar pra você.
 
 <mostrar swap>
 
@@ -53,7 +53,7 @@
 
 <mostrar execução single thread>
 
-- Ou alternar entre os dois, em sequência. Isso é útil principalmente quando a múltiplas threds.
+- Ou alternar entre os dois, em sequência. Isso é útil principalmente quando a múltiplas threads.
 
 <mostrar execução multithread>
 
@@ -92,7 +92,7 @@
 
 <carregar código de acesso null>
 
-- Espere, esse endereço não existe! O endereço 00 especial, nós chamamos ele de NULL. É uma exceção especial pra facilitar o trabalho de alguns programadores. Nós chamamos isso de Nullpointer Exception
+- Espere, esse endereço não existe! O endereço 00 é especial, nós chamamos ele de NULL. É uma exceção especial pra facilitar o trabalho de alguns programadores. Nós chamamos isso de Null pointer Exception
 
 ## Multiprogramação com partição variável: first fit, best fit, worst fit
 
@@ -102,11 +102,11 @@
 
 - Precisamos encaixar este novo processo, mas não há espaço o suficiente no momento, nós vamos então esperar pelos outros encerrarem para inserí-lo. Ou, eu posso mover alguns deles de menor prioridade para a swap, hihi
 
-<simulação com vários processos, alguns encerrando>
+<simulação com vários processos, mais deles encerrando>
 
-- Agora que temos espaço o suficiente podemos colocá-lo. Mas onde vamos por ele?
+- Agora que temos espaço o suficiente podemos colocá-lo... Mas onde vamos por ele?
 
-<alocando processo no começo>
+<simular first fit (alocando no começo)>
 
 - Faz sentido, no primeiro espaço. Mas, Bem, a gente pode se prepar melhor para este problema do espaço no futuro. Que tal inserirmos em outro local?
 
@@ -116,11 +116,11 @@
 
 <simulação worst fit>
 
-- Dessa vez eu decidi colocar ele no pior lugar? Por quê, você me pergunta? Olha, os próximos processos vão ter tooodo esse espaço livre pra caber ali, isso é bom não?
+- Dessa vez eu decidi colocar ele no pior lugar? Por quê, você me pergunta? Olha, os próximos processos vão ter tooodo esse espaço livre pra caber ali, isso é bom, não é mesmo?
 
 ## Paginação
 
-- Bem, eu não estou satisfeito. Ainda há espaço que não estamos usando... E que tal se dividirmos o processo em pedaços? 
+- Bem, eu não estou satisfeito. Ainda há espaço que não estamos usando... E que tal se dividirmos o processo em pedaços?
 
 <simulação de quebra do processo>
 
