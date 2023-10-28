@@ -71,11 +71,10 @@ int main(int argc, char **argv)
 /* Print a dialog by chicko. Escape sequences %
  * %a: pass a function call (must receive no args and return void),
  * %n: non-blocking mode: line will not wait for user input
+ * %s: set skip mode: must receive an int flag skip mode
  * dialog will stop until completed. */
 void print_chicko(char const *s, ...)
 {
-#define CHECK_CHAR(C)\
-
     va_list ap; /* Variable argument list */
     va_start(ap, s); /* Point to first arg. */
 
@@ -83,6 +82,7 @@ void print_chicko(char const *s, ...)
     bool block = true;
     int arg = 0;
     size_t lines = 1;
+    int do_skip = skip & (SKIP_ALL | SKIP_TO_EVENT);
 
     while (*s != '\0') {
         switch (*s) {
@@ -95,6 +95,10 @@ void print_chicko(char const *s, ...)
                         action();
                         ++s;
                         break;
+                    case 's': {
+                        do_skip |= va_arg(ap, int);
+                        ++s;
+                    } break;
                     case 'n': // Non blocking mode
                         block = false;
                     break;
@@ -102,7 +106,7 @@ void print_chicko(char const *s, ...)
                 }
                 default: break;
         }
-        if (!skip) {
+        if (!do_skip) {
             fflush(stdout);
             msleep(15);
         }
@@ -138,20 +142,21 @@ void boot()
         printf("\33[2K\r"); // Erase last line
     }
 
+    char main_scope_name[] = "main";
+    struct enter_scope_args main_scope = { .pointer=0, .scope_name=main_scope_name };
+
     // Hello World process
     struct command proc_hello_world[] = {
         { .line="print(\"Hello\")", .call=NULL, .args=NULL },
         { .line="putchar(' ')", .call=NULL, .args=NULL },
         { .line="print(\"World\")", .call=NULL, .args=NULL },
     };
-    char hw_scope_name[] = "main";
-    struct enter_scope_args scope = { .pointer=0, .scope_name=hw_scope_name };
-    int stream[] = { (char)0, EOF };
-    struct set_var_args sva = {.pointer=&_registers.stack_tail, .data_stream=stream};
+    int stream[] = { 0, EOF };
+    struct set_var_args sva = { .pointer=&_registers.stack_tail, .data_stream=stream };
 
     // Tutorial Process
     struct command proc_tuto[] = {
-        { .line="int main() {", .call=enter_scope, .args=&scope },
+        { .line="int main() {", .call=enter_scope, .args=&main_scope },
         { .line="\t""int i;", .call=inc_sp, .args=NULL },
         { .line="\t""i = 0;", .call=set_var, .args=&sva} ,
         { .line="}", .call=none, .args=NULL },
@@ -165,13 +170,13 @@ void boot()
         int arg_value; // value of function argument
         struct inc_var_args inc_args; // args of increment call
         struct recursive_args args; // args of recursive call
-    } rec = { .args={ .pointer=0, .scope_name=scope.scope_name },
+    } rec = { .args={ .pointer=0, .scope_name=main_scope.scope_name },
               .lim=_mem_size - _raw_end + 1 };
     rec.inc_args.pointer = rec.args.arg_value = &rec.arg_value;
 
     char rec_header_fmt[] = "int rec(int i = %d) {";
     struct command proc_recursion[] = {
-        { .line="int rec(int i = 0) {", .call=recursive_call, .args=&scope },
+        { .line="int rec(int i = 0) {", .call=recursive_call, .args=&main_scope },
         { .line="", .call=NULL, .args=NULL }, // branch
         { .line="\t\ti++", .call=inc_var, .args=&(rec.inc_args) },
         { .line="\t\trec(i)", .call=recursive_call, .args=&(rec.args) },
@@ -188,6 +193,7 @@ void boot()
 
 #define MAX_STEP 25
     int skip_case = -1;
+    bool use_swap = false;
     for (size_t step = 0; step != MAX_STEP; step++) {
         step -= step_proc();
 
@@ -197,7 +203,11 @@ void boot()
         printf("\033[32m"
                "Mini (virtual) Operational System emulation started!\033[m\n");
 
-        print_memory();
+        print_memory(_mem);
+
+        if (use_swap)
+            print_memory(_swap);
+
         print_code();
         putchar('\n');
         print_mem_hex();
@@ -211,6 +221,7 @@ void boot()
                             CLIS_CK_EMPHASIS("[BARRA DE ESPAÇO]") " para continuar!");
                 print_chicko("Nesta simulação do nosso Mini (virtual) Sistema Operacional "
                             "descobriremos como ocorre o gerenciamento de memória em um OS.");
+                skip |= SKIP_REFRESH;
             } break;
             case 1: {
                 print_chicko("Na barra superior está o espaço utilizado na sua memória no momento.");
@@ -234,14 +245,13 @@ void boot()
             case 5: {
                 if (skip_case != 5)
                     print_chicko("Um " CLIS_CK_EMPHASIS("processo") " selvagem apareceu!");
-                print_chicko("Para controlar a execução pressione o botão " CLIS_CK_EMPHASIS("[ESPAÇO]")
-                            " e iremos mostrar o que acontece. " CLIS_CK_BOLD("Tente!"));
+                print_chicko("%sPara controlar a execução pressione o botão " CLIS_CK_EMPHASIS("[ESPAÇO]")
+                            " e iremos mostrar o que acontece. " CLIS_CK_BOLD("Tente!"), (skip_case == 5 ? SKIP_ALL : 0));
                 skip_case = 5;
             } break;
             case 6: {
                 print_chicko("Muito bem, você deve ter entendido. " CLIS_CK_ITALICS("Certo?"));
                 // setup_proc(proc_recursion, sizeof(proc_recursion) / sizeof(struct command));
-                step++;
             } break;
             case 7: {
                 // FIXME
@@ -261,19 +271,20 @@ void boot()
                 //             "chamado de \"Stack Overflow\"... " CLIS_CK_ITALICS("Não o site bobão!"));
                 // print_chicko("Bem, podemos resolver o problema anterior usando uma estratégia "
                 //             "chamada \"swapping\", eu vou mostrar pra você.");
-                printf("Agora vamos conhecer uma técnica chamada " CLIS_CK_EMPHASIS("\"swapping\"") "!");
+                // print_chicko("Agora vamos conhecer uma técnica chamada " CLIS_CK_EMPHASIS("\"swapping\"") "!");
                 // TODO -> <mostrar swap>
             }; break;
             case 9: {
-                print_chicko("Esta nova partição aqui é chamada de... " CLIS_CK_ITALICS("isso ")
-                             CLIS_CK_EMPHASIS("SWAP") ",\né basicamente um arquivo no disco do PC. "
-                             "Vamos ver agora!");
-                // TODO -> <loop continua e swap é preenchido, e para antes de travar>
+                // print_chicko("Esta nova partição aqui é chamada de... " CLIS_CK_ITALICS("isso ")
+                //              CLIS_CK_EMPHASIS("SWAP") ",\né basicamente um arquivo no disco do PC. "
+                //              "Vamos ver agora!");
+                // TODO -> <recursão continua e swap é preenchido, e para antes de travar>
             }
             case 10: {
                 print_chicko(CLIS_CK_BOLD("Ótimo!"));
-                print_chicko("Mas eu posso fazer mais do que isso. Agora vamos ver o que "
-                            "acontecesse quando há vários programas sendo executados.");
+                print_chicko("Mas eu posso fazer mais do que isso.\n" CLIS_RESET CLIS_CHICKO
+                            "Agora vamos ver o que acontecesse quando há vários "
+                            "programas sendo executados.");
                 // TODO -> <carrega dois códigos main na tela>
             }; break;
             case 11: {

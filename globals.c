@@ -6,6 +6,7 @@ int skip = false;
 int skip_to_event = 0;
 
 int *_mem;
+int *_swap;
 size_t _mem_size = DEF_MEM_SIZE;
 const float _mem_ratio = .7;
 size_t _raw_end;

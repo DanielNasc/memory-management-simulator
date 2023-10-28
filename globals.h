@@ -25,6 +25,8 @@ extern int skip; /* skip simulation animations */
 extern int skip_to_event; /* skip simulation until event id */
 
 extern int *_mem; // memory starting pointer
+// TODO -> Aplicar swap
+extern int *_swap; // swap starting pointer
 extern size_t _mem_size; // memory size (bytes)
 extern const float _mem_ratio; // the ratio of memory allocated against RAW data
 

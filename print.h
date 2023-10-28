@@ -4,7 +4,7 @@
 void *dots(void *_vargp);
 
 /* print memory usage simulation */
-void print_memory(void);
+void print_memory(int *mem);
 
 /* print memory simulation's data (hex codes) */
 void print_mem_hex(void);

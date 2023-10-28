@@ -24,7 +24,7 @@ void *dots(void *_vargp)
 }
 
 
-void print_memory()
+void print_memory(int *mem)
 {
     const long SPEED = 5;
     putchar('[');
@@ -47,7 +47,7 @@ void print_memory()
             printf("\033[m");
 
         // print mem
-        if (_mem[i] == EOF)
+        if (mem[i] == EOF)
             printf("-");
         else
             printf("*");
