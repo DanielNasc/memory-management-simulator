@@ -19,7 +19,7 @@
  * the string s, with minimum size of min (filled with zeroes). Assumes b >= 2. */
 void ultob(unsigned long ul, char s[], unsigned char b, unsigned long min);
 /* Converts a unsigned long into a hex string */
-#define ultohex(UL, S, M) ultob(UL, S, 16, M)
+#define ultohex(UL, S, M) ultob((unsigned long) UL, S, 16, M)
 #define ultobyte(UL, S) ultohex(UL, S, 2)
 
 void disable_canonical(void); /* Setup terminal for direct input. Without echoing. */

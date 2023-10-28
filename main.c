@@ -37,10 +37,23 @@ static struct {
     } last_mod; // last modified data space
     char *scope_name;
 } _registers;
+struct command {
+    char line[LINE_WIDTH];
+    void (* call)(void *);
+    void *args;
+};
+static struct {
+    size_t step; /* Step of execution */
+    size_t size; /* #of steps */
+    struct command *commands;
+} _emu_reg;       /* Registers of emulation */
+
 
 #define SKIP_ALL 1
 #define SKIP_REFRESH 2
-static bool skip = false; /* skip simulation animations */
+#define SKIP_TO_EVENT 4
+static int skip = false; /* skip simulation animations */
+static int skip_to_event = 0;
 void boot(); /* Boot (virtual) OS emulation */
 
 
@@ -67,8 +80,12 @@ int main(int argc, char **argv)
                         _mem_size = size;
                 }; break;
                 case 's':
-                    skip = SKIP_ALL;
+                    skip |= SKIP_ALL;
                     break;
+                case '=': {
+                    skip |= SKIP_TO_EVENT;
+                    skip_to_event = atoi(++*argv);
+                } break;
                 default:
                     print_err("Invalid argument ignored!");
             }
@@ -224,6 +241,28 @@ void enter_scope(void *vargp)
 }
 
 
+struct recursive_args {
+    size_t pointer;
+    int *arg_value;
+    char *scope_name;
+    char *header; // point to the process header string
+    const char *header_fmt; // must be a string with a single %d format specifier
+};
+/* Emulate entering a scope of a (virtual) recursive function with one integer arg. */
+void recursive_call(void *vargp)
+{
+    struct recursive_args *args = (struct recursive_args *)vargp;
+
+    _registers.scope_name = args->scope_name;
+    _registers.pc = args->pointer;
+
+    if (_registers.stack_tail < _registers.heap_end) // block if erroring
+        _mem[_registers.stack_tail++] = *(args->arg_value);
+
+    sprintf(args->header, args->header_fmt, *(args->arg_value));
+}
+
+
 void none(void *vargp) {}
 
 
@@ -241,6 +280,15 @@ void inc_sp(void *vargp)
 }
 
 
+struct inc_var_args {
+    int *pointer;
+};
+void inc_var(void *vargp)
+{
+    struct inc_var_args args = *(struct inc_var_args *)vargp;
+    (*(args.pointer))++;
+}
+
 struct set_var_args {
     size_t *pointer;
     int *data_stream;
@@ -254,41 +302,28 @@ void set_var(void *vargp)
 }
 
 
-struct command {
-    char line[LINE_WIDTH];
-    void (* call)(void *);
-    void *args;
-};
-struct {
-    size_t step; /* Step of execution */
-    size_t size; /* #of steps */
-    struct command *commands;
-} emu_reg;       /* Registers of emulation */
-
-
 /* Emulates a process step. */
 void print_code()
 {
     printf("PC: %lu, Stack Tail: %lu\n", _registers.pc, _registers.stack_tail);
     putchar('\n');
 
-    for (size_t i = 0; i < emu_reg.size; i++) {
+    for (size_t i = 0; i < _emu_reg.size; i++) {
         if (!skip)
             msleep(100);
-        printf("%s%lu: %s\n" CLIS_RESET, (emu_reg.step == (i + 1) ? CLIS_FOCUS ">" : " "),
-               (i + 1), emu_reg.commands[i].line);
+        printf("%s%lu: %s\n" CLIS_RESET, (_emu_reg.step == (i + 1) ? CLIS_FOCUS ">" : " "),
+               (i + 1), _emu_reg.commands[i].line);
     }
 }
-
 
 
 /* Setups a process emulation execution. */
 void setup_proc(struct command *commands, size_t size)
 {
-    if (emu_reg.commands != commands) {
-        emu_reg.commands = commands;
-        emu_reg.size = size;
-        emu_reg.step = 0;
+    if (_emu_reg.commands != commands) {
+        _emu_reg.commands = commands;
+        _emu_reg.size = size;
+        _emu_reg.step = 0;
     }
 }
 
@@ -296,11 +331,11 @@ void setup_proc(struct command *commands, size_t size)
 /* Runs next step of execution. Returns 1 if running or 0 otherwise */
 int step_proc()
 {
-    if (emu_reg.step < emu_reg.size) {
-        struct command *com = emu_reg.commands + emu_reg.step;
+    if (_emu_reg.step < _emu_reg.size) {
+        struct command *com = _emu_reg.commands + _emu_reg.step;
         if (com->call)
             com->call(com->args);
-        emu_reg.step++;
+        _emu_reg.step++;
 
         return true;
     }
@@ -364,6 +399,7 @@ void wait_input_event(int scancode)
 #include <stdarg.h>
 /* Print a dialog by chicko. Escape sequences %
  * %a: pass a function call (must receive no args and return void),
+ * %n: non-blocking mode: line will not wait for user input
  * dialog will stop until completed. */
 void print_chicko(char const *s, ...)
 {
@@ -373,6 +409,7 @@ void print_chicko(char const *s, ...)
     va_start(ap, s); /* Point to first arg. */
 
     printf("🐣 " CLIS_CHICKO);
+    bool block = true;
     int arg = 0;
     size_t lines = 1;
 
@@ -387,6 +424,9 @@ void print_chicko(char const *s, ...)
                         action();
                         ++s;
                         break;
+                    case 'n': // Non blocking mode
+                        block = false;
+                    break;
                     default: break;
                 }
                 default: break;
@@ -399,12 +439,14 @@ void print_chicko(char const *s, ...)
     }
     printf("\033[m\n");
 
-    wait_input_event(' ');
+    if (block && !(skip & SKIP_TO_EVENT)) // block input
+        wait_input_event(' ');
 
     while (lines-- != 0)
         printf("\33[1A\33[2K\r"); // Clear last line
     va_end(ap);
 }
+#include <string.h>
 
 
 /* boot the (virtual) mini operational system emulation */
@@ -424,32 +466,65 @@ void boot()
 
         printf("\33[2K\r"); // Erase last line
     }
+
+    // Hello World process
     struct command proc_hello_world[] = {
         { .line="print(\"Hello\")", .call=NULL, .args=NULL },
         { .line="putchar(' ')", .call=NULL, .args=NULL },
         { .line="print(\"World\")", .call=NULL, .args=NULL },
     };
-    struct enter_scope_args esa = {.pointer=0, .scope_name="main"};
+    char hw_scope_name[] = "main";
+    struct enter_scope_args scope = { .pointer=0, .scope_name=hw_scope_name };
     int stream[] = { (char)0, EOF };
     struct set_var_args sva = {.pointer=&_registers.stack_tail, .data_stream=stream};
+
+    // Tutorial Process
     struct command proc_tuto[] = {
-        {.line="int main() {", .call=enter_scope, .args=&esa},
-        {.line="\t""int i;", .call=inc_sp, .args=NULL},
-        {.line="\t""i = 0;", .call=set_var, .args=&sva},
-        {.line="}", .call=none, .args=NULL},
+        { .line="int main() {", .call=enter_scope, .args=&scope },
+        { .line="\t""int i;", .call=inc_sp, .args=NULL },
+        { .line="\t""i = 0;", .call=set_var, .args=&sva} ,
+        { .line="}", .call=none, .args=NULL },
     };
-    
-    emu_reg.commands = proc_hello_world;
-    emu_reg.size = sizeof(proc_hello_world) / sizeof(struct command);
-    emu_reg.step = emu_reg.size + 1;
+
+    // Recursive Process
+    char rec_scope_name[] = "rec";
+    struct {
+        size_t lim; // limit of recursion
+        int arg_value; // value of function argument
+        struct inc_var_args inc_args; // args of increment call
+        struct recursive_args args; // args of recursive call
+    } rec = { .args={ .pointer=0, .scope_name=scope.scope_name },
+              .lim=_mem_size - _raw_end + 1 };
+    rec.inc_args.pointer = rec.args.arg_value = &rec.arg_value;
+
+    char rec_header_fmt[] = "int rec(int i = %d) {";
+    struct command proc_recursion[] = {
+        { .line="int rec(int i = 0) {", .call=recursive_call, .args=&scope },
+        { .line="", .call=NULL, .args=NULL }, // branch
+        { .line="\t\ti++", .call=inc_var, .args=&(rec.inc_args) },
+        { .line="\t\trec(i)", .call=recursive_call, .args=&(rec.args) },
+        { .line="}", .call=NULL, .args=NULL },
+    };
+    sprintf(proc_recursion[1].line, "\tif (i < %lu)", rec.lim); // set lim into branch
+    rec.args.header = proc_recursion[0].line;
+    rec.args.header_fmt = rec_header_fmt;
+
+    // Setup default process
+    _emu_reg.commands = proc_hello_world;
+    _emu_reg.size = sizeof(proc_hello_world) / sizeof(struct command);
+    _emu_reg.step = _emu_reg.size + 1;
 
 #define MAX_STEP 25
-    int skip = -1;
+    int skip_case = -1;
     for (size_t step = 0; step != MAX_STEP; step++) {
+        step -= step_proc();
+
+        if (skip_to_event && (step == skip_to_event))
+            skip &= ~SKIP_TO_EVENT; // remove skipping
+
         printf("\033[32m"
                "Mini (virtual) Operational System emulation started!\033[m\n");
 
-        step -= step_proc();
         print_memory();
         print_code();
         putchar('\n');
@@ -485,28 +560,36 @@ void boot()
                 step++;
             } break;
             case 5: {
-                if (skip != 5)
+                if (skip_case != 5)
                     print_chicko("Um " CLIS_CK_EMPHASIS("processo") " selvagem apareceu!");
                 print_chicko("Para controlar a execução pressione o botão " CLIS_CK_EMPHASIS("[ESPAÇO]")
                             " e iremos mostrar o que acontece. " CLIS_CK_BOLD("Tente!"));
-                skip = 5;
+                skip_case = 5;
             } break;
             case 6: {
                 print_chicko("Muito bem, você deve ter entendido. " CLIS_CK_ITALICS("Certo?"));
-                print_chicko("Agora iremos mostrar o que acontecesse quando temos um loop no programa.");
-                // TODO -> <loop inicia>
-                // TODO -> <loop não para>
+                // setup_proc(proc_recursion, sizeof(proc_recursion) / sizeof(struct command));
+                step++;
             } break;
             case 7: {
-                // TODO -> Implementar o "travamento" do chicko no método print em %Z (frozen) (continua até pressionar espaço)
-                print_chicko("Oh no! Que problemão, a nossa memória vai acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr... ");
+                // FIXME
+                // if (_registers.stack_tail < _registers.heap_end - 1) {
+                //     print_chicko("Agora iremos mostrar o que acontecesse quando temos uma "
+                //                 CLIS_CK_EMPHASIS("recursão") " no programa.%n");
+                //     msleep(200);
+                // }
+                // else {
+                //     print_chicko("Oh no! Que problemão, a nossa memória vai acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr... ");
+                //     // TODO -> Implementar o "travamento" do chicko no método print em %Z (frozen) (continua até pressionar espaço)
+                //     step++;
+                // }
             } break;
             case 8: {
-                print_chicko(CLIS_CK_BOLD("Droga, eu travei!") " Isso que acabou de acontecer é "
-                            "chamado de \"Stack Overflow\"... " CLIS_CK_ITALICS("Não o site bobão!"));
-
-                print_chicko("Bem, podemos resolver o problema anterior usando uma estratégia "
-                            "chamada \"swapping\", eu vou mostrar pra você.");
+                // print_chicko(CLIS_CK_BOLD("Droga, eu travei!") " Isso que acabou de acontecer é "
+                //             "chamado de \"Stack Overflow\"... " CLIS_CK_ITALICS("Não o site bobão!"));
+                // print_chicko("Bem, podemos resolver o problema anterior usando uma estratégia "
+                //             "chamada \"swapping\", eu vou mostrar pra você.");
+                printf("Agora vamos conhecer uma técnica chamada " CLIS_CK_EMPHASIS("\"swapping\"") "!");
                 // TODO -> <mostrar swap>
             }; break;
             case 9: {
