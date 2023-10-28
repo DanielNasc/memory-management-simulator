@@ -1,59 +1,17 @@
+#include "globals.h"
 #include "utils.h"
 #include "sleep.h"
+#include "print.h"
+#include "input.h"
+#include "mem_brush.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <inttypes.h>
-#include <pthread.h>
+#include <inttypes.h> // typing
+#include <pthread.h> // threads
+#include <uchar.h>
+#include <stdarg.h> // variable arguments
 
 
-#define LINE_WIDTH (_1KB / 8)
-#define DEF_MEM_SIZE LINE_WIDTH // default memory size
-
-/* Command Line Interface Styles */
-#define CLIS_RESET "\33[0;49;49m"
-#define CLIS_FOCUS "\033[1;32m"
-#define CLIS_CHICKO "\33[32;43m"
-#define CLIS_CK_BOLD(S) "\33[1m" S "\33[0;32;43m"
-#define CLIS_CK_UNDER(S) "\33[4m" S "\33[0;32;43m"
-#define CLIS_CK_STRIKE(S) "\33[9m" S "\33[0;32;43m"
-#define CLIS_CK_ITALICS(S) "\33[3m" S "\33[0;32;43m"
-#define CLIS_CK_EMPHASIS(S) "\33[41;97m" S "\33[32;43m"
-
-static int *_mem; // memory starting pointer
-static size_t _mem_size = DEF_MEM_SIZE; // memory size (bytes)
-const float _mem_ratio = .7; // the ratio of memory allocated against RAW data
-
-static size_t _raw_end; // End of RAW data pool
-
-static struct {
-    size_t pc; // Program Counter
-    size_t stack_tail; // Stack Pointer
-    size_t heap_end; // Heap Limit
-
-    // for the purposes of this emulation, to ease visualization
-    struct {
-        size_t start;
-        size_t end;
-    } last_mod; // last modified data space
-    char *scope_name;
-} _registers;
-struct command {
-    char line[LINE_WIDTH];
-    void (* call)(void *);
-    void *args;
-};
-static struct {
-    size_t step; /* Step of execution */
-    size_t size; /* #of steps */
-    struct command *commands;
-} _emu_reg;       /* Registers of emulation */
-
-
-#define SKIP_ALL 1
-#define SKIP_REFRESH 2
-#define SKIP_TO_EVENT 4
-static int skip = false; /* skip simulation animations */
-static int skip_to_event = 0;
 void boot(); /* Boot (virtual) OS emulation */
 
 
@@ -75,7 +33,7 @@ int main(int argc, char **argv)
                     ++argv;
                     long size = strtol(*argv, argv + 1, 10);
                     if (size <= 0)
-                        print_err("Invalid memory size, argument ignored, fallback to default (1KB)");
+                        print_err("Invalid memory size, argument ignored, fallback to default (1KB)", );
                     else
                         _mem_size = size;
                 }; break;
@@ -110,293 +68,6 @@ int main(int argc, char **argv)
 }
 
 
-static bool waiting;
-
-// Wait in a separated thread (ms)
-void *wait(void *vargp) 
-{
-    waiting = true;
-    msleep((*(size_t *)vargp));
-    waiting = false;
-    return NULL;
-}
-
-
-/* Boot loading message */
-void *dots(void *_vargp)
-{
-    const long SPEED = 100; // ms
-    printf("\033[33m""Starting mini (virtual) Operational System emulation...");
-    fflush(stdout);
-
-    while (waiting) {
-        msleep(SPEED);
-        printf("\b\b\b   \b\b\b"); // clear dots
-        fflush(stdout);
-
-        for (int i = 3; i > 0; --i) {
-            msleep(SPEED);
-            putchar('.');
-            fflush(stdout);
-        }
-    }
-    printf("\033[m");
-}
-
-
-/* print memory usage simulation */
-void print_memory()
-{
-    const long SPEED = 5;
-    putchar('[');
-    printf("\033[35m"); // RAW data section color
-
-    for (size_t i = 0; i != _mem_size; ++i) {
-        if (!skip) {
-            fflush(stdout);
-            msleep(SPEED);
-        }
-
-        // Place the mem ratio separation
-        if (i == _raw_end)
-            printf("\033[m");
-
-        // draw last modified space as green
-        if (_registers.last_mod.start == i)
-            printf("\033[32m");
-        if (_registers.last_mod.end == i)
-            printf("\033[m");
-
-        // print mem
-        if (_mem[i] == EOF)
-            printf("-");
-        else
-            printf("*");
-
-        if ((i + 1) % LINE_WIDTH == 0)
-            printf("\n ");
-    }
-
-    if (_mem_size % LINE_WIDTH == 0)
-        putchar('\b');
-    printf("]\n");
-}
-
-
-
-/* print memory simulation's data (hex codes) */
-void print_mem_hex()
-{
-    const long SPEED = 3;
-    const size_t WIDTH = LINE_WIDTH / 4;
-    putchar('[');
-    printf("\033[35m"); // RAW data section color
-
-    for (size_t i = 0; i != _mem_size; ++i) {
-        if (!skip) {
-            fflush(stdout);
-            msleep(SPEED);
-        }
-
-        // Place the mem ratio separation
-        if (i == _raw_end)
-            printf("\033[m");
-
-        // draw last modified space as green
-        if (_registers.last_mod.start == i)
-            printf("\033[32m");
-        if (_registers.last_mod.end == i)
-            printf("\033[m");
-
-        // print mem
-        if (_mem[i] == EOF)
-            printf(" -- ");
-        else {
-            char hex[3];
-            ultobyte(_mem[i], hex);
-            printf(" %s ", hex);
-        }
-
-        if ((i + 1) % WIDTH == 0)
-            printf("\n ");
-    }
-
-    if (_mem_size % WIDTH == 0)
-        putchar('\b');
-    printf("]\n");
-}
-
-
-struct enter_scope_args {
-    size_t pointer;
-    char *scope_name;
-};
-/* Emulate entering a scope of a (virtual) function */
-void enter_scope(void *vargp)
-{
-    struct enter_scope_args args = *(struct enter_scope_args *)vargp;
-
-    _registers.scope_name = args.scope_name;
-    _registers.pc = args.pointer;
-}
-
-
-struct recursive_args {
-    size_t pointer;
-    int *arg_value;
-    char *scope_name;
-    char *header; // point to the process header string
-    const char *header_fmt; // must be a string with a single %d format specifier
-};
-/* Emulate entering a scope of a (virtual) recursive function with one integer arg. */
-void recursive_call(void *vargp)
-{
-    struct recursive_args *args = (struct recursive_args *)vargp;
-
-    _registers.scope_name = args->scope_name;
-    _registers.pc = args->pointer;
-
-    if (_registers.stack_tail < _registers.heap_end) // block if erroring
-        _mem[_registers.stack_tail++] = *(args->arg_value);
-
-    sprintf(args->header, args->header_fmt, *(args->arg_value));
-}
-
-
-void none(void *vargp) {}
-
-
-/* Increments Program Counter */
-void inc_pc(void *vargp)
-{
-    _registers.pc++;
-}
-
-
-/* Increments Stack Pointer */
-void inc_sp(void *vargp)
-{
-    _registers.stack_tail++;
-}
-
-
-struct inc_var_args {
-    int *pointer;
-};
-void inc_var(void *vargp)
-{
-    struct inc_var_args args = *(struct inc_var_args *)vargp;
-    (*(args.pointer))++;
-}
-
-struct set_var_args {
-    size_t *pointer;
-    int *data_stream;
-};
-/* Set a variable on stack memory */
-void set_var(void *vargp)
-{
-    struct set_var_args args = *(struct set_var_args *)vargp;
-    while (*(args.data_stream) != EOF)
-        _mem[*args.pointer] = (*(args.data_stream++));
-}
-
-
-/* Emulates a process step. */
-void print_code()
-{
-    printf("PC: %lu, Stack Tail: %lu\n", _registers.pc, _registers.stack_tail);
-    putchar('\n');
-
-    for (size_t i = 0; i < _emu_reg.size; i++) {
-        if (!skip)
-            msleep(100);
-        printf("%s%lu: %s\n" CLIS_RESET, (_emu_reg.step == (i + 1) ? CLIS_FOCUS ">" : " "),
-               (i + 1), _emu_reg.commands[i].line);
-    }
-}
-
-
-/* Setups a process emulation execution. */
-void setup_proc(struct command *commands, size_t size)
-{
-    if (_emu_reg.commands != commands) {
-        _emu_reg.commands = commands;
-        _emu_reg.size = size;
-        _emu_reg.step = 0;
-    }
-}
-
-
-/* Runs next step of execution. Returns 1 if running or 0 otherwise */
-int step_proc()
-{
-    if (_emu_reg.step < _emu_reg.size) {
-        struct command *com = _emu_reg.commands + _emu_reg.step;
-        if (com->call)
-            com->call(com->args);
-        _emu_reg.step++;
-
-        return true;
-    }
-
-    return false;
-}
-
-
-static struct key_input_event {
-    int scancode;
-    bool key_pressed;
-} *key_input_events = NULL;
-static size_t key_input_n = 0;
-static bool _input_event_guard;
-
-/* Tracks keyboard input events. */
-void *track_keyboard_input(void *_vargp)
-{
-    for (;;) {
-        int code = getchar();
-        if (!_input_event_guard && key_input_events != NULL) {
-            _input_event_guard = true;
-            struct key_input_event *kie = key_input_events;
-
-            for (int i = key_input_n; i != 0; i--)
-                if (kie->scancode != code)
-                    kie++;
-                else
-                    kie->key_pressed = true;
-
-            _input_event_guard = false;
-        }
-    }
-    return NULL;
-}
-
-
-void wait_input_event(int scancode)
-{
-    struct key_input_event kie = { .scancode=scancode, .key_pressed=false};
-
-    // Set input event
-    while (_input_event_guard);
-    _input_event_guard = true;
-    key_input_n = 1;
-    key_input_events = &kie;
-    _input_event_guard = false;
-
-    while (!kie.key_pressed); // Wait
-
-    // Unset event
-    while (_input_event_guard);
-    _input_event_guard = true;
-    key_input_n = 0;
-    key_input_events = NULL;
-    _input_event_guard = false;
-}
-
-
-#include <uchar.h>
-#include <stdarg.h>
 /* Print a dialog by chicko. Escape sequences %
  * %a: pass a function call (must receive no args and return void),
  * %n: non-blocking mode: line will not wait for user input
@@ -486,6 +157,7 @@ void boot()
         { .line="}", .call=none, .args=NULL },
     };
 
+    // FIXME
     // Recursive Process
     char rec_scope_name[] = "rec";
     struct {

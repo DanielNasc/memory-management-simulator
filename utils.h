@@ -1,11 +1,19 @@
 #pragma once
 
-/* Print Error */
-#define print_err(S, ARGS...) \
-        fprintf(stderr, "\033[31m""Error: " S "\033[m\n" __VA_OPT__(,) ARGS)
+/* Print Error */ // This is a C++20 feature, use the alternative (POG) instead
+// #define print_err(S, ARGS...) \
+//         fprintf(stderr, "\033[31m""Error: " S "\033[m\n" __VA_OPT__(,) ARGS)
 /* Print Warning */
-#define print_war(S, ARGS...) \
-        fprintf(stderr, "\033[31m""Warning: " S "\033[m\n" __VA_OPT__(,) ARGS)
+// #define print_war(S, ARGS...) \
+//         fprintf(stderr, "\033[31m""Warning: " S "\033[m\n" __VA_OPT__(,) ARGS)
+
+
+/* Print Error: using concatenation */
+#define print_err(S, ...) \
+        fprintf(stderr, "\033[31m""Error: " S "\033[m\n" ## __VA_ARGS__)
+/* Print Warning: using concatenation */
+#define print_war(S, ...) \
+        fprintf(stderr, "\033[31m""Warning: " S "\033[m\n" ## __VA_ARGS__)
 #define forever for (;;) /* Infinity loop */
 
 #define bool uint8_t /* boolean */
