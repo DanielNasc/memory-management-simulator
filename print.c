@@ -24,7 +24,7 @@ void *dots(void *_vargp)
 }
 
 
-void print_memory(int *mem)
+void print_memory(int *const mem, struct _emulation_register *const emus, const unsigned emus_n)
 {
     const long SPEED = 5;
     putchar('[');
@@ -37,14 +37,16 @@ void print_memory(int *mem)
         }
 
         // Place the mem ratio separation
-        if (i == _raw_end)
+        if ((mem + i) == _raw_end)
             printf("\033[m");
 
         // draw last modified space as green
-        if (_registers.last_mod.start == i)
-            printf("\033[32m");
-        if (_registers.last_mod.end == i)
-            printf("\033[m");
+        for (unsigned j = emus_n; j != 0; j--) {
+            if (emus[j].last_mod.start == (_mem + j))
+                printf("\033[32m");
+            if (emus[j].last_mod.end == (_mem + j))
+                printf("\033[m");
+        }
 
         // print mem
         if (mem[i] == EOF)
@@ -62,7 +64,7 @@ void print_memory(int *mem)
 }
 
 
-void print_mem_hex()
+void print_mem_hex(int * const mem, struct _emulation_register *const emus, const unsigned emus_n)
 {
     const long SPEED = 3;
     const size_t WIDTH = LINE_WIDTH / 4;
@@ -76,21 +78,23 @@ void print_mem_hex()
         }
 
         // Place the mem ratio separation
-        if (i == _raw_end)
+        if ((mem + i) == _raw_end)
             printf("\033[m");
 
         // draw last modified space as green
-        if (_registers.last_mod.start == i)
-            printf("\033[32m");
-        if (_registers.last_mod.end == i)
-            printf("\033[m");
+        for (unsigned j = emus_n; j != 0; j--) {
+            if (emus[j].last_mod.start == (_mem + j))
+                printf("\033[32m");
+            if (emus[j].last_mod.end == (_mem + j))
+                printf("\033[m");
+        }
 
         // print mem
-        if (_mem[i] == EOF)
+        if (mem[i] == EOF)
             printf(" -- ");
         else {
             char hex[3];
-            ultobyte(_mem[i], hex);
+            ultobyte(mem[i], hex);
             printf(" %s ", hex);
         }
 
@@ -104,15 +108,15 @@ void print_mem_hex()
 }
 
 
-void print_code()
+void print_code(struct _emulation_register *const emu)
 {
-    printf("PC: %lu, Stack Tail: %lu\n", _registers.pc, _registers.stack_tail);
+    printf("\nPC: %lu, Stack Tail: %ld\n", emu->pc, emu->stack.tail - _mem);
     putchar('\n');
 
-    for (size_t i = 0; i < _emu_reg.size; i++) {
+    for (size_t i = 0; i < emu->size; i++) {
         if (!skip)
             msleep(100);
-        printf("%s%lu: %s\n" CLIS_RESET, (_emu_reg.step == (i + 1) ? CLIS_FOCUS ">" : " "),
-               (i + 1), _emu_reg.commands[i].line);
+        printf("%s%lu: %s\n" CLIS_RESET, (emu->pc == (i + 1) ? CLIS_FOCUS ">" : " "),
+               (i + 1), emu->commands[i].line);
     }
 }

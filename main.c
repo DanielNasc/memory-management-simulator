@@ -52,15 +52,10 @@ int main(int argc, char **argv)
     /* Allocation starts here */
     int memory[_mem_size];
     _mem = memory; // defines system (virtual) memory
+    _raw_end = _mem + (_mem_size - (size_t)(_mem_size * _mem_ratio));
 
     for (size_t i = 0; i < _mem_size; ++i)
         memory[i] = EOF; // Fill it with "trash memory" (blank for visualization purposes)
-
-    // start registers
-    _registers.pc = 0;
-    _registers.stack_tail = _raw_end = _mem_size - (size_t)(_mem_size * _mem_ratio);
-    _registers.heap_end = _mem_size;
-    _registers.last_mod.start = _registers.last_mod.end = EOF;
 
     boot();
 
@@ -142,60 +137,67 @@ void boot()
         printf("\33[2K\r"); // Erase last line
     }
 
+#define MAX_PROCS 2
+    int threads_n = 1; // #of processes
+    struct _emulation_register procs[MAX_PROCS];
+
     char main_scope_name[] = "main";
-    struct enter_scope_args main_scope = { .pointer=0, .scope_name=main_scope_name };
+    struct enter_scope_args main_scope = { .emu=&procs[0], .pc=0, .scope_name=main_scope_name };
 
     // Hello World process
     struct command proc_hello_world[] = {
-        { .line="print(\"Hello\")", .call=NULL, .args=NULL },
-        { .line="putchar(' ')", .call=NULL, .args=NULL },
-        { .line="print(\"World\")", .call=NULL, .args=NULL },
-    };
-    int stream[] = { 0, EOF };
-    struct set_var_args sva = { .pointer=&_registers.stack_tail, .data_stream=stream };
-
-    // Tutorial Process
-    struct command proc_tuto[] = {
-        { .line="int main() {", .call=enter_scope, .args=&main_scope },
-        { .line="\t""int i;", .call=inc_sp, .args=NULL },
-        { .line="\t""i = 0;", .call=set_var, .args=&sva} ,
-        { .line="}", .call=none, .args=NULL },
-    };
-
-    // FIXME
-    // Recursive Process
-    char rec_scope_name[] = "rec";
-    struct {
-        size_t lim; // limit of recursion
-        int arg_value; // value of function argument
-        struct inc_var_args inc_args; // args of increment call
-        struct recursive_args args; // args of recursive call
-    } rec = { .args={ .pointer=0, .scope_name=main_scope.scope_name },
-              .lim=_mem_size - _raw_end + 1 };
-    rec.inc_args.pointer = rec.args.arg_value = &rec.arg_value;
-
-    char rec_header_fmt[] = "int rec(int i = %d) {";
-    struct command proc_recursion[] = {
-        { .line="int rec(int i = 0) {", .call=recursive_call, .args=&main_scope },
-        { .line="", .call=NULL, .args=NULL }, // branch
-        { .line="\t\ti++", .call=inc_var, .args=&(rec.inc_args) },
-        { .line="\t\trec(i)", .call=recursive_call, .args=&(rec.args) },
+        { .line="int main() {", .call=NULL, .args=NULL },
+        { .line="\tprint(\"Hello\")", .call=NULL, .args=NULL },
+        { .line="\tputchar(' ')", .call=NULL, .args=NULL },
+        { .line="\tprint(\"World\")", .call=NULL, .args=NULL },
         { .line="}", .call=NULL, .args=NULL },
     };
-    sprintf(proc_recursion[1].line, "\tif (i < %lu)", rec.lim); // set lim into branch
-    rec.args.header = proc_recursion[0].line;
-    rec.args.header_fmt = rec_header_fmt;
 
-    // Setup default process
-    _emu_reg.commands = proc_hello_world;
-    _emu_reg.size = sizeof(proc_hello_world) / sizeof(struct command);
-    _emu_reg.step = _emu_reg.size + 1;
+    // Tutorial Process
+    struct set_var_args sva1 = { .emu=&procs[0], .mem=_raw_end, .value=0 };
+    struct command proc_tuto[] = {
+        { .line="int main() {", .call=goto_scope, .args=&main_scope },
+        { .line="\t""int i;", .call=inc_stack, .args=&procs[0] },
+        { .line="\t""i = 0;", .call=set_var, .args=&sva1} ,
+        { .line="}", .call=NULL, .args=NULL },
+    };
+
+    int multi_stream[] = { 10, EOF };
+
+    // Setup processes list
+    procs[0] = (struct _emulation_register) {
+        .size = sizeof(proc_hello_world) / sizeof(struct command),
+        .commands = proc_hello_world,
+        .last_mod = { NULL, NULL },
+        .scope_name = main_scope_name,
+        .stack.lim = _mem + _mem_size,
+    }; // Setup default process
+    procs[0].stack.head = procs[0].stack.tail = _mem + _mem_size;
+    procs[0].pc = procs[0].size + 1;
+
+    /* processing */
+    int skip_case = -1; // Skip a case "event" sub-step
+    int simult_proc = 0; // which process is running in simultaneous mode
+    bool threaded_mode = false;
+
+    /* swap */
+    bool use_swap = false;
 
 #define MAX_STEP 25
-    int skip_case = -1;
-    bool use_swap = false;
     for (size_t step = 0; step != MAX_STEP; step++) {
-        step -= step_proc();
+
+        if (threaded_mode) {
+            int c = 0;
+            for (int c_proc = 0; c_proc < threads_n; c_proc++)
+                c |= step_proc(procs + c_proc); // Step through threads
+            step -= c; // Don't step if any is running
+        }
+        else {
+            int is_running = step_proc(procs + simult_proc);
+            if (simult_proc < (threads_n - 1))
+                simult_proc += -is_running; // Simultaneous steps
+            step -= is_running;         // Don't step while running
+        }
 
         if (skip_to_event && (step == skip_to_event))
             skip &= ~SKIP_TO_EVENT; // remove skipping
@@ -203,14 +205,16 @@ void boot()
         printf("\033[32m"
                "Mini (virtual) Operational System emulation started!\033[m\n");
 
-        print_memory(_mem);
+        print_memory(_mem, procs, threads_n);
 
         if (use_swap)
-            print_memory(_swap);
+            print_memory(_swap, procs, threads_n);
 
-        print_code();
+        for (int i = 0; i < threads_n; i++)
+            print_code(procs + i);
+
         putchar('\n');
-        print_mem_hex();
+        print_mem_hex(_mem, procs, threads_n);
         putchar('\n');
 
         switch (step) {
@@ -225,21 +229,25 @@ void boot()
             } break;
             case 1: {
                 print_chicko("Na barra superior está o espaço utilizado na sua memória no momento.");
-                // TODO -> Destacar a barra superior
+                // TODO #1 -> Destacar a barra superior
             } break;
             case 2: {
                 print_chicko("No centro você verá o código do processo que iremos executar no nosso sistema.");
-                // TODO -> Destacar barra do centro
+                // TODO #2 -> Destacar barra do centro
             } break;
             case 3: {
                 print_chicko("Logo abaixo você pode ver o que acontece com a memória conforme o processo é executado.");
-                // TODO -> Destacar o inferior
+                // TODO #3 -> Destacar o inferior
             } break;
             case 4: {
-                print_chicko("Pelo propósito dessa simulação, iremos focar apenas na memória do espaço do usuário."
-                            CLIS_RESET "\n" CLIS_CHICKO "Então eu escondi pra você a parte referente ao interior "
-                            "do sistema. 😳 " CLIS_CK_STRIKE("Favor, respeitar ok? 👉👈"));
-                setup_proc(proc_tuto, sizeof(proc_tuto) / sizeof(struct command));
+                print_chicko("Pelo propósito dessa simulação, iremos focar apenas na memória do "
+                            CLIS_CK_EMPHASIS("espaço do usuário.") CLIS_RESET "\n" CLIS_CHICKO
+                            "Então eu escondi pra você a parte referente ao interior "
+                            "do sistema " CLIS_CK_PURPLE("(em roxo)")".\n"
+                            "😳 " CLIS_CK_STRIKE("Favor, respeitar ok? 👉👈"));
+                setup_proc(&procs[0], proc_tuto, sizeof(proc_tuto) / sizeof(struct command),
+                           _raw_end, _mem + _mem_size );
+                           // single process occupies all the stack space
                 step++;
             } break;
             case 5: {
@@ -251,11 +259,11 @@ void boot()
             } break;
             case 6: {
                 print_chicko("Muito bem, você deve ter entendido. " CLIS_CK_ITALICS("Certo?"));
-                // setup_proc(proc_recursion, sizeof(proc_recursion) / sizeof(struct command));
+                // setup_proc(&procs[0], proc_recursion, sizeof(proc_recursion) / sizeof(struct command));
             } break;
             case 7: {
-                // FIXME
-                // if (_registers.stack_tail < _registers.heap_end - 1) {
+                // FIXME -> Resolver processo recursivo
+                // if (_registers.stack_end < _registers.heap_end - 1) {
                 //     print_chicko("Agora iremos mostrar o que acontecesse quando temos uma "
                 //                 CLIS_CK_EMPHASIS("recursão") " no programa.%n");
                 //     msleep(200);
@@ -272,7 +280,7 @@ void boot()
                 // print_chicko("Bem, podemos resolver o problema anterior usando uma estratégia "
                 //             "chamada \"swapping\", eu vou mostrar pra você.");
                 // print_chicko("Agora vamos conhecer uma técnica chamada " CLIS_CK_EMPHASIS("\"swapping\"") "!");
-                // TODO -> <mostrar swap>
+                // TODO #5 -> Implementar swap
             }; break;
             case 9: {
                 // print_chicko("Esta nova partição aqui é chamada de... " CLIS_CK_ITALICS("isso ")
@@ -285,7 +293,7 @@ void boot()
                 print_chicko("Mas eu posso fazer mais do que isso.\n" CLIS_RESET CLIS_CHICKO
                             "Agora vamos ver o que acontecesse quando há vários "
                             "programas sendo executados.");
-                // TODO -> <carrega dois códigos main na tela>
+                // TODO #6 -> Implementar multiprogramação
             }; break;
             case 11: {
                 print_chicko("Queremos tirar proveito dos recursos da máquina, então faremos "

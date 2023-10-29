@@ -7,12 +7,10 @@ int skip_to_event = 0;
 
 int *_mem;
 int *_swap;
+int *_raw_end;
+int *_heap_end;
 size_t _mem_size = DEF_MEM_SIZE;
 const float _mem_ratio = .7;
-size_t _raw_end;
-
-struct _registers_table _registers;
-struct _emulation_register _emu_reg;
 
 bool waiting;
 
