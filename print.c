@@ -24,7 +24,7 @@ void *dots(void *_vargp)
 }
 
 
-void print_memory(int *const mem, struct _emulation_register *const emus, const unsigned emus_n)
+void print_memory(int *const mem, ProcessRegister *const emus, const unsigned emus_n)
 {
     const long SPEED = 5;
     putchar('[');
@@ -42,9 +42,13 @@ void print_memory(int *const mem, struct _emulation_register *const emus, const 
 
         // draw last modified space as green
         for (unsigned j = emus_n; j != 0; j--) {
-            if (emus[j].last_mod.start == (_mem + j))
+            if (emus[j].last_mod.stack.start == (mem + j))
                 printf("\033[32m");
-            if (emus[j].last_mod.end == (_mem + j))
+            if (emus[j].last_mod.stack.end == (mem + j))
+                printf("\033[m");
+            if (emus[j].last_mod.swap.start == (mem + j))
+                printf("\033[32m");
+            if (emus[j].last_mod.swap.end == (mem + j))
                 printf("\033[m");
         }
 
@@ -64,7 +68,7 @@ void print_memory(int *const mem, struct _emulation_register *const emus, const 
 }
 
 
-void print_mem_hex(int * const mem, struct _emulation_register *const emus, const unsigned emus_n)
+void print_mem_hex(int * const mem, ProcessRegister *const emus, const unsigned emus_n)
 {
     const long SPEED = 3;
     const size_t WIDTH = LINE_WIDTH / 4;
@@ -83,9 +87,13 @@ void print_mem_hex(int * const mem, struct _emulation_register *const emus, cons
 
         // draw last modified space as green
         for (unsigned j = emus_n; j != 0; j--) {
-            if (emus[j].last_mod.start == (_mem + j))
+            if (emus[j].last_mod.stack.start == (mem + j))
                 printf("\033[32m");
-            if (emus[j].last_mod.end == (_mem + j))
+            if (emus[j].last_mod.stack.end == (mem + j))
+                printf("\033[m");
+            if (emus[j].last_mod.swap.start == (mem + j))
+                printf("\033[32m");
+            if (emus[j].last_mod.swap.end == (mem + j))
                 printf("\033[m");
         }
 
@@ -108,7 +116,7 @@ void print_mem_hex(int * const mem, struct _emulation_register *const emus, cons
 }
 
 
-void print_code(struct _emulation_register *const emu)
+void print_code(ProcessRegister *const emu)
 {
     printf("\nPC: %lu, Stack Tail: %ld\n", emu->pc, emu->stack.tail - _mem);
     putchar('\n');

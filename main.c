@@ -51,7 +51,9 @@ int main(int argc, char **argv)
 
     /* Allocation starts here */
     int memory[_mem_size];
+    int swap[_mem_size];
     _mem = memory; // defines system (virtual) memory
+    _swap = swap; // defines system (virtual) swap
     _raw_end = _mem + (_mem_size - (size_t)(_mem_size * _mem_ratio));
 
     for (size_t i = 0; i < _mem_size; ++i)
@@ -139,13 +141,16 @@ void boot()
 
 #define MAX_PROCS 2
     int threads_n = 1; // #of processes
-    struct _emulation_register procs[MAX_PROCS];
+    ProcessRegister procs[MAX_PROCS];
 
-    char main_scope_name[] = "main";
-    struct enter_scope_args main_scope = { .emu=&procs[0], .pc=0, .scope_name=main_scope_name };
+#define MAX_NAME_LEN 120
+    char scope_name[MAX_NAME_LEN] = "main";
+    struct goto_scope_args main_scope = {
+        .emu=&procs[0], .pc=0, .scope_name=scope_name
+    };
 
     // Hello World process
-    struct command proc_hello_world[] = {
+    Command proc_hello_world[] = {
         { .line="int main() {", .call=NULL, .args=NULL },
         { .line="\tprint(\"Hello\")", .call=NULL, .args=NULL },
         { .line="\tputchar(' ')", .call=NULL, .args=NULL },
@@ -155,25 +160,62 @@ void boot()
 
     // Tutorial Process
     struct set_var_args sva1 = { .emu=&procs[0], .mem=_raw_end, .value=0 };
-    struct command proc_tuto[] = {
+    Command proc_tuto[] = {
         { .line="int main() {", .call=goto_scope, .args=&main_scope },
         { .line="\t""int i;", .call=inc_stack, .args=&procs[0] },
         { .line="\t""i = 0;", .call=set_var, .args=&sva1} ,
         { .line="}", .call=NULL, .args=NULL },
     };
 
-    int multi_stream[] = { 10, EOF };
+    // Recursive process
+    char rec_header_fmt[] = "int rec(int i = %d)";
+    char rec_name[] = "rec";
+    //
+    int var_a = 0;
+    Segment stream = { .start=&var_a, .end=(&var_a)+1 };
+    struct inc_var_args inc_args = { .emu=&procs[0], .mem=&(procs[0].args.values.start) };
+    struct goto_scope_args rec_scope = {
+        .emu=&procs[0], .pc=0, .scope_name=rec_name
+    };
+    struct enter_scope_args rec_es_args = {
+        .args={ .from=&(procs[0].args.values), .n=1, }, .emu=&procs[0],
+        .header.fmt=rec_header_fmt, .rec_lvl=0,
+        .scope={ .name=rec_name, .p=scope_name },
+    };
+    //
+    int comp_value = _mem + _mem_size - _raw_end + 1;
+    int *comp_ref = &comp_value;
+    struct comp_var_args comp_args = { .a=&(procs[0].stack.tail), .b=&comp_ref, .comp='<' };
+    // struct goto_scope_args gsa = {.emu = args->emu, .scope_name = args->scope.p, .pc = 0};
+    // goto_scope(&gsa);
+    Command proc_rec[] = {
+        { .line="int rec(int i = 0) {", .call=enter_scope, .args=&rec_es_args },
+        { .line="", .call=comp_var, .args=&sva1 },
+        { .line="\t\t""i++;", .call=inc_var, .args=&inc_args },
+        { .line="\t\t""rec(i);", .call=NULL, .args=NULL },
+        { .line="\t}", .call=call_scope, .args=&rec_scope },
+        { .line="}", .call=NULL, .args=NULL },
+    };
+    sprintf(proc_rec[1].line, "\tif (i < %d) {", comp_value);
+    rec_es_args.header.p = proc_rec[0].line;
 
     // Setup processes list
-    procs[0] = (struct _emulation_register) {
-        .size = sizeof(proc_hello_world) / sizeof(struct command),
+    procs[0] = (ProcessRegister) {
         .commands = proc_hello_world,
         .last_mod = { NULL, NULL },
-        .scope_name = main_scope_name,
+        .scope_name = scope_name,
+        .size = sizeof(proc_hello_world) / sizeof(Command),
         .stack.lim = _mem + _mem_size,
+        .swap.lim = _mem + _mem_size,
     }; // Setup default process
     procs[0].stack.head = procs[0].stack.tail = _mem + _mem_size;
+    procs[0].swap.head = procs[0].swap.tail = _swap + _mem_size;
     procs[0].pc = procs[0].size + 1;
+
+    // Setup arguments for recursion
+    procs[0].args.n = 1;
+    procs[0].args.values.start = &var_a;
+    procs[0].args.values.end = procs[0].args.values.start + procs[0].args.n;
 
     /* processing */
     int skip_case = -1; // Skip a case "event" sub-step
@@ -245,7 +287,7 @@ void boot()
                             "Então eu escondi pra você a parte referente ao interior "
                             "do sistema " CLIS_CK_PURPLE("(em roxo)")".\n"
                             "😳 " CLIS_CK_STRIKE("Favor, respeitar ok? 👉👈"));
-                setup_proc(&procs[0], proc_tuto, sizeof(proc_tuto) / sizeof(struct command),
+                setup_proc(&procs[0], proc_tuto, sizeof(proc_tuto) / sizeof(Command),
                            _raw_end, _mem + _mem_size );
                            // single process occupies all the stack space
                 step++;
@@ -259,13 +301,15 @@ void boot()
             } break;
             case 6: {
                 print_chicko("Muito bem, você deve ter entendido. " CLIS_CK_ITALICS("Certo?"));
-                // setup_proc(&procs[0], proc_recursion, sizeof(proc_recursion) / sizeof(struct command));
+                setup_proc(&procs[0], proc_rec, sizeof(proc_rec) / sizeof(Command), _raw_end, _mem + _mem_size);
+                step++;
             } break;
             case 7: {
                 // FIXME -> Resolver processo recursivo
+                print_chicko("%sAgora iremos mostrar o que acontecesse quando temos uma "
+                            CLIS_CK_EMPHASIS("recursão") " no programa.", (skip_case == 7 ? SKIP_ALL : 0));
+                skip_case = 7;
                 // if (_registers.stack_end < _registers.heap_end - 1) {
-                //     print_chicko("Agora iremos mostrar o que acontecesse quando temos uma "
-                //                 CLIS_CK_EMPHASIS("recursão") " no programa.%n");
                 //     msleep(200);
                 // }
                 // else {
@@ -329,31 +373,31 @@ void boot()
                 // TODO -> <mostrar alocação de tamanhos diferentes>
             }; break;
             case 15: {
-                print_chicko("Ok! Agora vou te mostrar algo legal... Algo PERIGOSO!!! ☠️ "
-                            CLIS_CK_UNDER("RADICAL! 😎 ") CLIS_CK_EMPHASIS("Ponteiros"));
-                // TODO -> <carregar demonstração da memória heap>
+                // print_chicko("Ok! Agora vou te mostrar algo legal... Algo PERIGOSO!!! ☠️ "
+                //             CLIS_CK_UNDER("RADICAL! 😎 ") CLIS_CK_EMPHASIS("Ponteiros"));
+                // TODO -> <carregar demonstração da memória heap> (IGNORAR)
             } break;
             case 16: {
-                print_chicko("Esse espaço no final é chamado de heap (ou monte), é aqui que\n"
-                            "fica a memória adicional. Muitos programas utilizam a heap\n"
-                            "quando querem crescer variavelmente, é um pouco de trabalho\n"
-                            "para mim, mas é um trabalho honesto 🤠.");
-                // TODO -> <simular erro de segmentation fault
+                // print_chicko("Esse espaço no final é chamado de heap (ou monte), é aqui que\n"
+                //             "fica a memória adicional. Muitos programas utilizam a heap\n"
+                //             "quando querem crescer variavelmente, é um pouco de trabalho\n"
+                //             "para mim, mas é um trabalho honesto 🤠.");
+                // TODO -> <simular erro de segmentation fault (IGNORAR)
             }; break;
             case 17: {
-                print_chicko("Espere, você não deveria acessar esta memória, o outro programa\n"
-                            "vai ter problema. " CLIS_CK_BOLD("Erro!!! " CLIS_CK_EMPHASIS("Erro!!")));
-                print_chicko("Como eu esperava, esse é mais um caso de " CLIS_CK_BOLD("Segmentation fault.")
-                            "\nUm programador responsável nunca permitiria ponteiros soltos assim.\n"
-                            "Eu não permitirei acessar além da fronteira. "
-                            CLIS_CK_EMPHASIS("Segmentation fault!") " Ouviu bem? 😠");
-                // TODO -> <carregar código de acesso null>
+                // print_chicko("Espere, você não deveria acessar esta memória, o outro programa\n"
+                //             "vai ter problema. " CLIS_CK_BOLD("Erro!!! " CLIS_CK_EMPHASIS("Erro!!")));
+                // print_chicko("Como eu esperava, esse é mais um caso de " CLIS_CK_BOLD("Segmentation fault.")
+                //             "\nUm programador responsável nunca permitiria ponteiros soltos assim.\n"
+                //             "Eu não permitirei acessar além da fronteira. "
+                //             CLIS_CK_EMPHASIS("Segmentation fault!") " Ouviu bem? 😠");
+                // TODO -> <carregar código de acesso null> (IGNORAR)
             }; break;
             case 18: {
-                print_chicko("Espere, esse endereço não existe! O endereço 00 é especial, "
-                            "nós chamamos ele de" CLIS_CK_BOLD("NULL") ".\nÉ uma exceção especial "
-                            "pra facilitar o trabalho de alguns programadores.\n"
-                            "Nós chamamos isso de " CLIS_CK_EMPHASIS("Null pointer Exception"));
+                // print_chicko("Espere, esse endereço não existe! O endereço 00 é especial, "
+                //             "nós chamamos ele de" CLIS_CK_BOLD("NULL") ".\nÉ uma exceção especial "
+                //             "pra facilitar o trabalho de alguns programadores.\n"
+                //             "Nós chamamos isso de " CLIS_CK_EMPHASIS("Null pointer Exception"));
 
                 print_chicko("Bem, você já entendeu como processos funcionam. Vamos ignorar\n"
                             "esta parte por enquanto, e focar em entender o que acontece\n"
@@ -388,20 +432,20 @@ void boot()
                 print_chicko("Olha, os próximos processos vão ter tooodo esse espaço livre\n"
                             "pra caber ali, isso é bom, não é mesmo?");
 
-                print_chicko("Bem, eu não estou satisfeito. Ainda há espaço que não estamos usando...\n"
-                            "E que tal se dividirmos o processo em pedaços?");
-                // TODO -> <simulação de quebra do processo>
+                // print_chicko("Bem, eu não estou satisfeito. Ainda há espaço que não estamos usando...\n"
+                //             "E que tal se dividirmos o processo em pedaços?");
+                // TODO -> <simulação de quebra do processo> (IGNORAR)
             }; break;
             case 24: {
-                print_chicko("Quanto aos endereços (virtuais) internos do programa, não se preocupe!\n"
-                            "Nós podemos usar uma tabela pra registrar a quebra, e deixamos a\n"
-                            "conversão ser feita por mim em uma "
-                            CLIS_CK_EMPHASIS("TLB (Translation look-aside buffer)")
-                            "\ne meu poderoso " CLIS_CK_UNDER("MMU") "! h3h3");
-                // TODO -> <apresentação da tabela de endereços>
+                // print_chicko("Quanto aos endereços (virtuais) internos do programa, não se preocupe!\n"
+                //             "Nós podemos usar uma tabela pra registrar a quebra, e deixamos a\n"
+                //             "conversão ser feita por mim em uma "
+                //             CLIS_CK_EMPHASIS("TLB (Translation look-aside buffer)")
+                //             "\ne meu poderoso " CLIS_CK_UNDER("MMU") "! h3h3");
+                // TODO -> <apresentação da tabela de endereços> (IGNORAR)
             } break;
             case MAX_STEP: {
-                print_chicko("Pronto! Agora sim!");
+                // print_chicko("Pronto! Agora sim!");
 
                 print_chicko("Então, é isso... Até mais!");
             }; break;

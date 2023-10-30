@@ -28,6 +28,10 @@ extern int skip_to_event; /* skip simulation until event id */
 
 #define PARTITION_SIZE 10 /* Size of a process partition */
 
+#define COMP 1 /* Comparison flag. Active if fail */
+#define STACK_OVERFLOW 2 /* Stack space overflowed */
+extern int _flags; // Register of some code checks
+
 extern int *_mem; // memory starting pointer
 // TODO -> Aplicar swap
 extern int *_swap; // swap starting pointer
@@ -38,31 +42,37 @@ extern int *_heap_end; // End of Heap
 extern size_t _mem_size; // memory size (bytes)
 extern const float _mem_ratio; // the ratio of memory allocated against RAW data
 
-
-struct command {
+typedef struct command {
     char line[LINE_WIDTH]; // Line of code
     void (* call)(void *); // Callback
     void *args;            // Callback args
-};
-
-// TODO -> use a typedef
-struct _emulation_register {
+} Command;
+typedef struct {
+    int *start;
+    int *end;
+} Segment;
+typedef struct {
+    int *head; /* where it starts */
+    int *tail; /* where it ends */
+    int *lim;  /* where it can grow to */
+} StackPartition;
+typedef struct process_register {
     size_t pc; // Program Counter: step of execution */
-    
     size_t size; /* #of steps */
-    struct command *commands; /* Command line */
+    Command *commands; /* Command line "program" */
+    StackPartition stack; /* stack's partition register */
+    StackPartition swap; /* swap's partition register */
     struct {
-        int *head; /* where it starts */
-        int *tail; /* where it ends */
-        int *lim;  /* where it can grow to */
-    } stack; /* stack partition register */
-    struct {
-        int *start;
-        int *end;
+        Segment stack;
+        Segment swap;
+        bool swapping; /* Pointer moved to swap */
     } last_mod; // last modified data space
     char *scope_name;
-}; /* Registers of emulation: for the purposes of this emulation, to ease visualization */
-
+    struct {
+        Segment values;
+        size_t n;
+    } args; // Arguments passed as parameters of a this method
+} ProcessRegister; /* Registers of emulation: for the purposes of this emulation, to ease visualization */
 
 extern bool waiting;
 void *wait(void *vargp);
