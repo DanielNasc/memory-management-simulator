@@ -204,3 +204,10 @@ int step_proc(ProcessRegister *const emu)
 
     return false;
 }
+
+
+void clear_partition(int *from, int *to)
+{
+    while (from != to)
+        *((from)++) = EOF;
+}

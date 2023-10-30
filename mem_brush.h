@@ -95,3 +95,6 @@ void comp_var(void *vargp);
 
 /* Runs next step of execution. Returns 1 if running or 0 otherwise */
 int step_proc(ProcessRegister * const);
+
+/* Clean a partition "from" first pointer arg "to" second  */
+void clear_partition(int *, int *);

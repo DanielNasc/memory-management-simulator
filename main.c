@@ -96,9 +96,10 @@ void print_chicko(char const *s, ...)
                         do_skip |= va_arg(ap, int);
                         ++s;
                     } break;
-                    case 'n': // Non blocking mode
+                    case 'n': { // Non blocking mode 
                         block = false;
-                    break;
+                        ++s;
+                    } break;
                     default: break;
                 }
                 default: break;
@@ -220,6 +221,7 @@ void boot()
     /* processing */
     int skip_case = -1; // Skip a case "event" sub-step
     int simult_proc = 0; // which process is running in simultaneous mode
+    int stick_count = 0;
     bool threaded_mode = false;
 
     /* swap */
@@ -305,41 +307,58 @@ void boot()
                 step++;
             } break;
             case 7: {
-                // FIXME -> Resolver processo recursivo
                 print_chicko("%sAgora iremos mostrar o que acontecesse quando temos uma "
                             CLIS_CK_EMPHASIS("recursão") " no programa.", (skip_case == 7 ? SKIP_ALL : 0));
                 skip_case = 7;
-                // if (_registers.stack_end < _registers.heap_end - 1) {
-                //     msleep(200);
-                // }
-                // else {
-                //     print_chicko("Oh no! Que problemão, a nossa memória vai acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr... ");
-                //     // TODO -> Implementar o "travamento" do chicko no método print em %Z (frozen) (continua até pressionar espaço)
-                //     step++;
-                // }
+
+                stick_count++;
+                if (stick_count == 7) {
+                    stick_count = 0;
+                    step++;
+                }
             } break;
             case 8: {
-                // print_chicko(CLIS_CK_BOLD("Droga, eu travei!") " Isso que acabou de acontecer é "
-                //             "chamado de \"Stack Overflow\"... " CLIS_CK_ITALICS("Não o site bobão!"));
-                // print_chicko("Bem, podemos resolver o problema anterior usando uma estratégia "
-                //             "chamada \"swapping\", eu vou mostrar pra você.");
-                // print_chicko("Agora vamos conhecer uma técnica chamada " CLIS_CK_EMPHASIS("\"swapping\"") "!");
-                // TODO #5 -> Implementar swap
-            }; break;
+                print_chicko("%sOk! Agora deixa comigo!!!%n", (skip_case == 8 ? SKIP_ALL : 0));
+                skip_case = 8;
+                stick_count++;
+
+                msleep(max(min(1000 / (stick_count), 1000), 10)); // Used min here cause the number can start to grow if greater than 1000, just to be safe
+
+                if (procs[0].last_mod.stack.end >= (_mem + _mem_size - 10))
+                    step++;
+            } break;
             case 9: {
+                // TODO -> Implementar o "travamento" do chicko no método print em %Z (frozen) (continua até pressionar espaço)
+                print_chicko(CLIS_CK_EMPHASIS("%sOh no! Que problemão, a nossa memória vai "
+                             "acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr...\n%n"), SKIP_ALL);
+                msleep(max(min(1000 / (stick_count), 1000), 10));
+                stick_count++;
+                if (procs[0].last_mod.stack.end == (_mem + _mem_size))
+                    step++;
+            } break;
+            case 10: {
+                print_chicko(CLIS_CK_EMPHASIS("%sOh no! Que problemão, a nossa memória vai "
+                                              "acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr... "), SKIP_TO_EVENT);
+                clear_partition(_mem, _mem + _mem_size);
+                step++;
+            }; break;
+            case 11: {
+                print_chicko(CLIS_CK_BOLD("Droga, eu travei!") " Isso que acabou de acontecer é "
+                            "chamado de \"Stack Overflow\"... " CLIS_CK_ITALICS("Não o site bobão!"));
+                print_chicko("Bem, podemos resolver o problema anterior usando uma estratégia "
+                            "chamada \"swapping\", eu vou mostrar pra você.");
+                // TODO #5 -> Implementar swap
+
                 // print_chicko("Esta nova partição aqui é chamada de... " CLIS_CK_ITALICS("isso ")
                 //              CLIS_CK_EMPHASIS("SWAP") ",\né basicamente um arquivo no disco do PC. "
                 //              "Vamos ver agora!");
                 // TODO -> <recursão continua e swap é preenchido, e para antes de travar>
-            }
-            case 10: {
+
                 print_chicko(CLIS_CK_BOLD("Ótimo!"));
                 print_chicko("Mas eu posso fazer mais do que isso.\n" CLIS_RESET CLIS_CHICKO
                             "Agora vamos ver o que acontecesse quando há vários "
                             "programas sendo executados.");
                 // TODO #6 -> Implementar multiprogramação
-            }; break;
-            case 11: {
                 print_chicko("Queremos tirar proveito dos recursos da máquina, então faremos "
                             "esses dois programas serem carregados simultaneamente.");
 

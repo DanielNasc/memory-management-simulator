@@ -19,6 +19,9 @@
 #define CLIS_CK_EMPHASIS(S) "\33[41;97m" S "\33[0;32;43m"
 #define CLIS_CK_PURPLE(S) "\33[35;43m" S "\33[0;32;43m"
 
+#define min(A, B) ((A < B) ? A: B) /* Return the minor */
+#define max(A, B) ((A > B) ? A: B) /* Return the major */
+
 /* Skip mode */
 #define SKIP_ALL 1
 #define SKIP_REFRESH 2 // TODO -> apply it
