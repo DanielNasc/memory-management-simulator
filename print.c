@@ -28,7 +28,9 @@ void print_memory(int *const mem, ProcessRegister *const emus, const unsigned em
 {
     const long SPEED = 5;
     putchar('[');
-    printf("\033[35m"); // RAW data section color
+
+    if (_mem == mem)        // if stack, print RAW in purple
+        printf("\033[35m"); // RAW data section color
 
     for (size_t i = 0; i != _mem_size; ++i) {
         if (!skip) {
@@ -37,18 +39,18 @@ void print_memory(int *const mem, ProcessRegister *const emus, const unsigned em
         }
 
         // Place the mem ratio separation
-        if ((mem + i) == _raw_end)
+        if ((mem + i) == _raw_end && _mem == mem)
             printf("\033[m");
 
         // draw last modified space as green
         for (unsigned j = emus_n; j != 0; j--) {
-            if (emus[j].last_mod.stack.start == (mem + j))
+            if (emus[j].last_mod.stack.start == (mem + i))
                 printf("\033[32m");
-            if (emus[j].last_mod.stack.end == (mem + j))
+            if (emus[j].last_mod.stack.end == (mem + i))
                 printf("\033[m");
-            if (emus[j].last_mod.swap.start == (mem + j))
+            if (emus[j].last_mod.swap.start == (mem + i))
                 printf("\033[32m");
-            if (emus[j].last_mod.swap.end == (mem + j))
+            if (emus[j].last_mod.swap.end == (mem + i))
                 printf("\033[m");
         }
 
@@ -68,12 +70,14 @@ void print_memory(int *const mem, ProcessRegister *const emus, const unsigned em
 }
 
 
-void print_mem_hex(int * const mem, ProcessRegister *const emus, const unsigned emus_n)
+void print_mem_hex(int *const mem, ProcessRegister *const emus, const unsigned emus_n)
 {
     const long SPEED = 3;
     const size_t WIDTH = LINE_WIDTH / 4;
     putchar('[');
-    printf("\033[35m"); // RAW data section color
+
+    if (mem == _mem) // if stack, print RAW in purple
+        printf("\033[35m"); // RAW data section color
 
     for (size_t i = 0; i != _mem_size; ++i) {
         if (!skip) {
@@ -82,18 +86,19 @@ void print_mem_hex(int * const mem, ProcessRegister *const emus, const unsigned 
         }
 
         // Place the mem ratio separation
-        if ((mem + i) == _raw_end)
+        if ((mem + i) == _raw_end && mem == _mem)
             printf("\033[m");
 
         // draw last modified space as green
+        // TODO -> Verificar por quê não está colorindo o espaço recém modificado
         for (unsigned j = emus_n; j != 0; j--) {
-            if (emus[j].last_mod.stack.start == (mem + j))
+            if (emus[j].last_mod.stack.start == (mem + i))
                 printf("\033[32m");
-            if (emus[j].last_mod.stack.end == (mem + j))
+            if (emus[j].last_mod.stack.end == (mem + i))
                 printf("\033[m");
-            if (emus[j].last_mod.swap.start == (mem + j))
+            if (emus[j].last_mod.swap.start == (mem + i))
                 printf("\033[32m");
-            if (emus[j].last_mod.swap.end == (mem + j))
+            if (emus[j].last_mod.swap.end == (mem + i))
                 printf("\033[m");
         }
 

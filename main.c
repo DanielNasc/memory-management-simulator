@@ -57,7 +57,7 @@ int main(int argc, char **argv)
     _raw_end = _mem + (_mem_size - (size_t)(_mem_size * _mem_ratio));
 
     for (size_t i = 0; i < _mem_size; ++i)
-        memory[i] = EOF; // Fill it with "trash memory" (blank for visualization purposes)
+        swap[i] = memory[i] = EOF; // Fill it with "trash memory" (blank for visualization purposes)
 
     boot();
 
@@ -173,7 +173,7 @@ void boot()
     char rec_name[] = "rec";
     //
     int var_a = 0;
-    Segment stream = { .start=&var_a, .end=(&var_a)+1 };
+    // Segment stream = { .start=&var_a, .end=(&var_a)+1 };
     struct inc_var_args inc_args = { .emu=&procs[0], .mem=&(procs[0].args.values.start) };
     struct goto_scope_args rec_scope = {
         .emu=&procs[0], .pc=0, .scope_name=rec_name
@@ -184,7 +184,7 @@ void boot()
         .scope={ .name=rec_name, .p=scope_name },
     };
     //
-    int comp_value = _mem + _mem_size - _raw_end + 1;
+    int comp_value = _mem + _mem_size - _raw_end + 4;
     int *comp_ref = &comp_value;
     struct comp_var_args comp_args = { .a=&(procs[0].stack.tail), .b=&comp_ref, .comp='<' };
     // struct goto_scope_args gsa = {.emu = args->emu, .scope_name = args->scope.p, .pc = 0};
@@ -209,9 +209,16 @@ void boot()
         .stack.lim = _mem + _mem_size,
         .swap.lim = _mem + _mem_size,
     }; // Setup default process
-    procs[0].stack.head = procs[0].stack.tail = _mem + _mem_size;
-    procs[0].swap.head = procs[0].swap.tail = _swap + _mem_size;
+    // procs[0].stack.head = procs[0].stack.tail = _mem + _mem_size;
     procs[0].pc = procs[0].size + 1;
+
+    // Setup stack on proc[0]
+    procs[0].stack.head = procs[0].stack.tail = _raw_end;
+    procs[0].stack.lim = _mem + _mem_size;
+
+    // Setup swap on proc[0]
+    procs[0].swap.head = procs[0].swap.tail = _swap;
+    procs[0].swap.lim = _swap + _mem_size;
 
     // Setup arguments for recursion
     procs[0].args.n = 1;
@@ -259,6 +266,9 @@ void boot()
 
         putchar('\n');
         print_mem_hex(_mem, procs, threads_n);
+
+        if (use_swap)
+            print_mem_hex(_swap, procs, threads_n);
         putchar('\n');
 
         switch (step) {
@@ -322,16 +332,20 @@ void boot()
                 skip_case = 8;
                 stick_count++;
 
-                msleep(max(min(1000 / (stick_count), 1000), 10)); // Used min here cause the number can start to grow if greater than 1000, just to be safe
+                if (!(skip & SKIP_TO_EVENT))
+                    msleep(max(min(1000 / (stick_count), 1000), 10)); // Used min here cause the number can start to grow if greater than 1000, just to be safe
 
                 if (procs[0].last_mod.stack.end >= (_mem + _mem_size - 10))
                     step++;
             } break;
             case 9: {
-                // TODO -> Implementar o "travamento" do chicko no método print em %Z (frozen) (continua até pressionar espaço)
+                // TODO #7 -> Implementar o "travamento" do chicko no método print em %Z (frozen) (continua até pressionar espaço)
                 print_chicko(CLIS_CK_EMPHASIS("%sOh no! Que problemão, a nossa memória vai "
-                             "acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr...\n%n"), SKIP_ALL);
-                msleep(max(min(1000 / (stick_count), 1000), 10));
+                             "acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr...%n"), SKIP_ALL);
+
+                if (!(skip & SKIP_TO_EVENT))
+                    msleep(max(min(1000 / (stick_count), 1000), 10));
+
                 stick_count++;
                 if (procs[0].last_mod.stack.end == (_mem + _mem_size))
                     step++;
@@ -340,37 +354,67 @@ void boot()
                 print_chicko(CLIS_CK_EMPHASIS("%sOh no! Que problemão, a nossa memória vai "
                                               "acabarrrrrrrrrrrrrrrrrrrrrrrrrrrrrr... "), SKIP_TO_EVENT);
                 clear_partition(_mem, _mem + _mem_size);
-                step++;
+                procs[0].pc = sizeof(proc_rec) / sizeof(Command);
             }; break;
             case 11: {
                 print_chicko(CLIS_CK_BOLD("Droga, eu travei!") " Isso que acabou de acontecer é "
-                            "chamado de \"Stack Overflow\"... " CLIS_CK_ITALICS("Não o site bobão!"));
+                            "chamado de " CLIS_CK_EMPHASIS("\"Stack Overflow\"") "... "
+                            CLIS_CK_ITALICS("Não o site bobão!"));
                 print_chicko("Bem, podemos resolver o problema anterior usando uma estratégia "
-                            "chamada \"swapping\", eu vou mostrar pra você.");
-                // TODO #5 -> Implementar swap
-
-                // print_chicko("Esta nova partição aqui é chamada de... " CLIS_CK_ITALICS("isso ")
-                //              CLIS_CK_EMPHASIS("SWAP") ",\né basicamente um arquivo no disco do PC. "
-                //              "Vamos ver agora!");
-                // TODO -> <recursão continua e swap é preenchido, e para antes de travar>
-
-                print_chicko(CLIS_CK_BOLD("Ótimo!"));
-                print_chicko("Mas eu posso fazer mais do que isso.\n" CLIS_RESET CLIS_CHICKO
-                            "Agora vamos ver o que acontecesse quando há vários "
-                            "programas sendo executados.");
-                // TODO #6 -> Implementar multiprogramação
-                print_chicko("Queremos tirar proveito dos recursos da máquina, então faremos "
-                            "esses dois programas serem carregados simultaneamente.");
-
-                print_chicko("Poderemos então executar um após o outro!");
-                // TODO -> <mostrar execução single thread>
+                            "chamada " CLIS_CK_UNDER("\"swapping\"") ", eu vou mostrar pra você.");
+                use_swap = true;
+                skip &= ~SKIP_REFRESH;
             }; break;
             case 12: {
-                print_chicko("Ou alternar entre os dois, em sequência. Isso é útil "
-                            "principalmente quando há múltiplas threads.");
-                // TODO -> <mostrar execução multithread>
+                if (skip_case != 12) {
+                    print_chicko(CLIS_CK_BOLD("Ta da!") " Esta nova partição aqui é chamada de... "
+                                CLIS_CK_ITALICS("isso ") CLIS_CK_EMPHASIS("SWAP")
+                                "," CLIS_RESET "\n" CLIS_CHICKO
+                                "é basicamente um arquivo no disco do PC. Vamos ver agora!");
+                    // reset and do recursion again
+                    procs[0].args.values.start = &var_a;
+                    procs[0].args.values.end = procs[0].args.values.start + procs[0].args.n;
+                    procs[0].pc = 0;
+                    procs[0].stack.tail = procs[0].stack.head;
+                    setup_proc(&procs[0], proc_rec, sizeof(proc_rec) / sizeof(Command), _raw_end, _mem + _mem_size);
+                    skip |= SKIP_REFRESH;
+                    skip_case = 12;
+                    stick_count = 0;
+                }
+                else {
+                    print_chicko("%s" CLIS_CK_BOLD("Ta da!") " Esta nova partição aqui é chamada de... "
+                                CLIS_CK_ITALICS("isso ") CLIS_CK_EMPHASIS("SWAP")
+                                "," CLIS_RESET "\n" CLIS_CHICKO
+                                "é basicamente um arquivo no disco do PC. Vamos ver agora!%n", SKIP_ALL);
+                    stick_count++;
+
+                    if (!(skip & SKIP_TO_EVENT))
+                        msleep(max(min(1000 / (stick_count), 1000), 10));
+
+                    if (procs[0].last_mod.swap.end == (_swap + _mem_size))
+                        step++;
+                }
             }; break;
             case 13: {
+                print_chicko(CLIS_CK_BOLD("Ótimo!"));
+                print_chicko("Mas eu posso fazer mais do que isso.\n" CLIS_RESET CLIS_CHICKO
+                             "Agora vamos ver o que acontecesse quando há vários "
+                             "programas sendo executados.");
+                // TODO #6 -> Implementar multiprogramação
+            }; break;
+            case 14: {
+                print_chicko("Queremos tirar proveito dos recursos da máquina, então faremos "
+                             "esses dois programas serem carregados simultaneamente.");
+
+                print_chicko("Poderemos então executar um após o outro!");
+                // TODO #8 -> <mostrar execução single thread>
+            }; break;
+            case 15: {
+                print_chicko("Ou alternar entre os dois, em sequência. Isso é útil "
+                             "principalmente quando há múltiplas threads.");
+                // TODO #9 -> <mostrar execução multithread>
+            } break;
+            case 16: {
                 print_chicko("É isso, eu tenho dois corações! h3h3");
 
                 print_chicko("Você deve ter notado os endereços que os programas estão usando colidem.\n"
@@ -385,25 +429,21 @@ void boot()
                             "na memória, para um swap por exemplo.");
                 // TODO -> <Stack Overflow em um dos processos>
             }; break;
-            case 14: {
+            case 17: {
                 print_chicko("Olhe, temos um problema! O segundo programa não pode continuar\n"
                             "por quê não há espaço o suficiente na máquina.");
                 print_chicko("Podemos resolver isso, balanceando o uso da memória.");
                 // TODO -> <mostrar alocação de tamanhos diferentes>
             }; break;
-            case 15: {
+            case 18: {
                 // print_chicko("Ok! Agora vou te mostrar algo legal... Algo PERIGOSO!!! ☠️ "
                 //             CLIS_CK_UNDER("RADICAL! 😎 ") CLIS_CK_EMPHASIS("Ponteiros"));
                 // TODO -> <carregar demonstração da memória heap> (IGNORAR)
-            } break;
-            case 16: {
                 // print_chicko("Esse espaço no final é chamado de heap (ou monte), é aqui que\n"
                 //             "fica a memória adicional. Muitos programas utilizam a heap\n"
                 //             "quando querem crescer variavelmente, é um pouco de trabalho\n"
                 //             "para mim, mas é um trabalho honesto 🤠.");
                 // TODO -> <simular erro de segmentation fault (IGNORAR)
-            }; break;
-            case 17: {
                 // print_chicko("Espere, você não deveria acessar esta memória, o outro programa\n"
                 //             "vai ter problema. " CLIS_CK_BOLD("Erro!!! " CLIS_CK_EMPHASIS("Erro!!")));
                 // print_chicko("Como eu esperava, esse é mais um caso de " CLIS_CK_BOLD("Segmentation fault.")
@@ -411,8 +451,6 @@ void boot()
                 //             "Eu não permitirei acessar além da fronteira. "
                 //             CLIS_CK_EMPHASIS("Segmentation fault!") " Ouviu bem? 😠");
                 // TODO -> <carregar código de acesso null> (IGNORAR)
-            }; break;
-            case 18: {
                 // print_chicko("Espere, esse endereço não existe! O endereço 00 é especial, "
                 //             "nós chamamos ele de" CLIS_CK_BOLD("NULL") ".\nÉ uma exceção especial "
                 //             "pra facilitar o trabalho de alguns programadores.\n"

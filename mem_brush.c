@@ -61,30 +61,42 @@ void stream_data(void *vargp)
     struct stream_data_args *args = (struct stream_data_args *)vargp;
 
     int *p = args->data_stream.start;
-    int *q = *(args->stack.p);
-    args->emu->last_mod.stack.start = q; // start access
+    int *q;
+    int was_swapping = args->emu->last_mod.swapping;
 
-    while (p != args->data_stream.end) {
-        if (q >= args->stack.lim && args->stack.inc) {
-            if (args->stack.inc) {
-                if (args->swap.tail == NULL) {
-                    _flags |= STACK_OVERFLOW; // error
+    if (was_swapping) // start access
+        args->emu->last_mod.swap.start = q;
+    else {
+        q = *(args->stack.p);
+        args->emu->last_mod.stack.start = q;
+
+        while (p != args->data_stream.end) {
+            if (q >= args->stack.lim && args->stack.inc) {
+                if (args->stack.inc) {
+                    if (args->swap.tail == NULL)
+                        _flags |= STACK_OVERFLOW; // error
+                    else {
+                        args->emu->last_mod.swapping = true; // start swapping
+                        *(args->swap.tail) = args->emu->swap.head; // swap on head (assumes partition empty)
+                    }
                     break;
                 }
-                else
-                    args->emu->last_mod.swapping = true; // start swapping
             }
+            else
+                *q = *p; // stream data
+            p++, q++;
         }
-        else
-            *q = *p; // stream data
-        p++, q++;
+        *(args->stack.p) = q; // Update stack tail
     }
-    *(args->stack.p) = q; // Update stack tail
-    args->emu->last_mod.stack.end = q; // end access (stack)
+
+    if (was_swapping) // end access
+        args->emu->last_mod.swap.end = q;
+    else
+        args->emu->last_mod.stack.end = q;
 
     if (args->emu->last_mod.swapping && args->swap.tail != NULL) {
         q = *(args->swap.tail); // start swap access
-        args->emu->last_mod.stack.end = q; // start access (swap)
+        args->emu->last_mod.swap.end = q; // start access (swap)
 
         while (*p != *(args->data_stream.end)) {
             if (q >= args->swap.lim) {
@@ -96,7 +108,7 @@ void stream_data(void *vargp)
             p++, q++;
         }
         *(args->swap.tail) = q; // Update swap tail
-        args->emu->last_mod.stack.end = q; // end access (swap)
+        args->emu->last_mod.swap.end = q; // end access (swap)
     }
 }
 
@@ -116,10 +128,10 @@ void enter_scope(void *vargp)
     }; // next copy segment
 
     if (args->emu->last_mod.swapping) { // Stream to selected partition
-        stream_args.stack.p = &args->emu->swap.tail;
-        stream_args.stack.lim = args->emu->swap.lim;
-        stream_args.swap.lim = NULL; // don't swap the swap
-        stream_args.swap.tail = NULL;
+        stream_args.swap.tail = &args->emu->swap.tail;
+        stream_args.swap.lim = args->emu->swap.lim;
+        stream_args.stack.lim = NULL; // don't swap the swap
+        stream_args.stack.p = NULL;
         arg_list.start = args->emu->swap.tail;
         arg_list.end = arg_list.start + args->args.n;
     }
