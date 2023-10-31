@@ -71,9 +71,10 @@ typedef struct process_register {
         bool swapping; /* Pointer moved to swap */
     } last_mod; // last modified data space
     char *scope_name;
+    // FIXME swapping segmentation (IGNORE: since we are using one argument is not needed)
     struct {
         Segment values;
-        size_t n;
+        size_t n; // Currently only supports one argument
     } args; // Arguments passed as parameters of a this method
 } ProcessRegister; /* Registers of emulation: for the purposes of this emulation, to ease visualization */
 

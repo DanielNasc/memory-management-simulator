@@ -61,7 +61,7 @@ void stream_data(void *vargp)
     struct stream_data_args *args = (struct stream_data_args *)vargp;
 
     int *p = args->data_stream.start;
-    int *q;
+    int *q, *new_tail;
     int was_swapping = args->emu->last_mod.swapping;
 
     if (was_swapping) // start access
@@ -72,68 +72,73 @@ void stream_data(void *vargp)
 
         while (p != args->data_stream.end) {
             if (q >= args->stack.lim && args->stack.inc) {
-                if (args->stack.inc) {
-                    if (args->swap.tail == NULL)
-                        _flags |= STACK_OVERFLOW; // error
-                    else {
-                        args->emu->last_mod.swapping = true; // start swapping
-                        *(args->swap.tail) = args->emu->swap.head; // swap on head (assumes partition empty)
-                    }
-                    break;
+                if (args->swap.tail == NULL)
+                    _flags |= STACK_OVERFLOW; // error
+                else {
+                    args->emu->last_mod.swapping = true; // start swapping
+                    *(args->swap.tail) = args->emu->swap.head; // swap on head (assumes partition empty)
+                    new_tail = q - 1;
+                    
                 }
+                break;
             }
-            else
+            else {
                 *q = *p; // stream data
-            p++, q++;
-        }
-        *(args->stack.p) = q; // Update stack tail
-    }
+                p++, q++;
 
-    if (was_swapping) // end access
-        args->emu->last_mod.swap.end = q;
-    else
-        args->emu->last_mod.stack.end = q;
+                if (args->stack.inc)
+                    new_tail = q; // Update stack tail
+            }
+        }
+        *(args->stack.p) = new_tail;
+        args->emu->last_mod.stack.end = new_tail; // end access
+    }
 
     if (args->emu->last_mod.swapping && args->swap.tail != NULL) {
         q = *(args->swap.tail); // start swap access
-        args->emu->last_mod.swap.end = q; // start access (swap)
+        args->emu->last_mod.swap.start = q; // start access (swap)
 
         while (*p != *(args->data_stream.end)) {
             if (q >= args->swap.lim) {
                 _flags |= STACK_OVERFLOW;
                 break;
             }
-            else
+            else {
                 *q = *p; // stream data to swap
-            p++, q++;
+                p++, q++;
+
+                if (args->stack.inc)
+                    new_tail = q;
+            }
         }
-        *(args->swap.tail) = q; // Update swap tail
-        args->emu->last_mod.swap.end = q; // end access (swap)
+        *(args->swap.tail) = new_tail; // Update swap tail
+        args->emu->last_mod.swap.end = new_tail; // end access (swap)
     }
 }
 
 
-void enter_scope(void *vargp)
+void recursive_call(void *vargp)
 {
-    struct enter_scope_args *args = (struct enter_scope_args *)vargp;
+    struct recursive_call_args *args = (struct recursive_call_args *)vargp;
 
     sprintf(args->scope.p, "%s[%d]", args->scope.name, args->rec_lvl);
     (args->rec_lvl)++;
 
     Segment arg_list;
     struct stream_data_args stream_args = {
-        .data_stream = *(args->args.from),
+        .data_stream = args->emu->args.values,
         .emu = args->emu,
         .stack.inc = true,
     }; // next copy segment
 
-    if (args->emu->last_mod.swapping) { // Stream to selected partition
+    bool was_swapping = args->emu->last_mod.swapping;
+    if (was_swapping) { // Stream to selected partition
         stream_args.swap.tail = &args->emu->swap.tail;
         stream_args.swap.lim = args->emu->swap.lim;
         stream_args.stack.lim = NULL; // don't swap the swap
         stream_args.stack.p = NULL;
         arg_list.start = args->emu->swap.tail;
-        arg_list.end = arg_list.start + args->args.n;
+        arg_list.end = arg_list.start + args->emu->args.n;
     }
     else {
         stream_args.stack.p = &args->emu->stack.tail;
@@ -141,17 +146,21 @@ void enter_scope(void *vargp)
         stream_args.swap.tail = &args->emu->swap.tail;
         stream_args.swap.lim = args->emu->swap.lim;
         arg_list.start = args->emu->stack.tail;
-        arg_list.end = arg_list.start + args->args.n;
+        arg_list.end = arg_list.start + args->emu->args.n;
     }
 
     stream_data(&stream_args); // Copy arguments to method call
-    *(args->args.from) = arg_list;
-    // fix: swap segmentation
+
+    // fix: swap segmentation (IGNORE: currently only supports one argument)
+    if (!was_swapping && args->emu->last_mod.swapping) // Just started swapping
+        arg_list = (Segment){ .start=args->emu->swap.head, .end=args->emu->swap.tail };
+    else
+        args->emu->args.values = arg_list;
 
     // TODO -> Implement custom sprintf that receives a vector of int
-    switch (args->args.n) { // update header: only one arg was necessary until then
+    switch (args->emu->args.n) { // update header: only one arg was necessary until then
         case 1:
-            sprintf(args->header.p, args->header.fmt, *(args->args.from->start));
+            sprintf(args->header.p, args->header.fmt, *(args->emu->args.values.start));
             break;
         default:
             break;
@@ -166,21 +175,19 @@ static void _call(ProcessRegister *const emu)
 
     if (com->call)            // if not NULL
         com->call(com->args); // call it
-    (emu->pc)++;
 }
 
 
 void call_scope(void *vargp)
 {
-    struct goto_scope_args *args = (struct goto_scope_args *)vargp;
+    // if (_flags & COMP)
+    //     return; // Don't call recursive
 
-    if (_flags & COMP) {
-        step_proc(args->emu);
-        return;
-    }
+    struct goto_scope_args *args = (struct goto_scope_args *)vargp;
 
     goto_scope(args);
     _call(args->emu);
+
 }
 
 
@@ -190,15 +197,15 @@ void comp_var(void *vargp)
     switch (args->comp) { // Only this given checks for simplicity
         case '<':
             if (**(args->a) >= **(args->b))
-                _flags |= COMP;
+                args->emu->pc = args->jump;
         break;
         case '>':
             if (**(args->a) <= **(args->b))
-                _flags |= COMP;
+                args->emu->pc = args->jump;
         break;
         case '=':
             if (**(args->a) != **(args->b))
-                _flags |= COMP;
+                args->emu->pc = args->jump;
         break;
         default: break;
     }
@@ -209,10 +216,9 @@ int step_proc(ProcessRegister *const emu)
 {
     if (emu->pc < emu->size) {
         _call(emu);
+        (emu->pc)++;
         return true;
     }
-    else if (emu->pc == emu->size)
-        (emu->pc)++; // No line will be highlighted
 
     return false;
 }

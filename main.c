@@ -178,20 +178,23 @@ void boot()
     struct goto_scope_args rec_scope = {
         .emu=&procs[0], .pc=0, .scope_name=rec_name
     };
-    struct enter_scope_args rec_es_args = {
-        .args={ .from=&(procs[0].args.values), .n=1, }, .emu=&procs[0],
-        .header.fmt=rec_header_fmt, .rec_lvl=0,
+    struct recursive_call_args rec_es_args = {
+        .emu=&procs[0], .header.fmt=rec_header_fmt, .rec_lvl=0,
         .scope={ .name=rec_name, .p=scope_name },
     };
     //
-    int comp_value = _mem + _mem_size - _raw_end + 4;
+    int comp_value = _mem + _mem_size - _raw_end + 6;
     int *comp_ref = &comp_value;
-    struct comp_var_args comp_args = { .a=&(procs[0].stack.tail), .b=&comp_ref, .comp='<' };
+    // TODO -> Correct this
+    struct comp_var_args comp_args = {
+        .emu=&procs[0], .jump=5, .a=&(procs[0].args.values.start),
+        .b=&comp_ref, .comp='<'
+    };
     // struct goto_scope_args gsa = {.emu = args->emu, .scope_name = args->scope.p, .pc = 0};
     // goto_scope(&gsa);
     Command proc_rec[] = {
-        { .line="int rec(int i = 0) {", .call=enter_scope, .args=&rec_es_args },
-        { .line="", .call=comp_var, .args=&sva1 },
+        { .line="int rec(int i = 0) {", .call=recursive_call, .args=&rec_es_args },
+        { .line="", .call=comp_var, .args=&comp_args },
         { .line="\t\t""i++;", .call=inc_var, .args=&inc_args },
         { .line="\t\t""rec(i);", .call=NULL, .args=NULL },
         { .line="\t}", .call=call_scope, .args=&rec_scope },
@@ -378,6 +381,7 @@ void boot()
                     procs[0].stack.tail = procs[0].stack.head;
                     setup_proc(&procs[0], proc_rec, sizeof(proc_rec) / sizeof(Command), _raw_end, _mem + _mem_size);
                     skip |= SKIP_REFRESH;
+                    _flags &= ~COMP;
                     skip_case = 12;
                     stick_count = 0;
                 }

@@ -19,7 +19,7 @@ void goto_scope(void *vargp);
 /* Emulates a method call. Receives a goto_scope_args as parameter. */
 void call_scope(void *vargp);
 
-struct enter_scope_args
+struct recursive_call_args
 {
     ProcessRegister *emu;
     struct {
@@ -30,14 +30,9 @@ struct enter_scope_args
         const char *fmt;
         char *p;
     } header;
-    struct {
-        // FIXME swapping segmentation (IGNORE: since we are using one argument is not needed)
-        Segment *from; // data to be copied from: updates when stack change
-        int n;     // Currently only supports one argument
-    } args;
     int rec_lvl; // current level of recursion
 };
-void enter_scope(void *vargp);
+void recursive_call(void *vargp);
 
 struct recursive_args {
     size_t pointer;
@@ -88,6 +83,8 @@ void stream_data(void *vargp);
 
 /* Compare a with b using comp (<, >, =). Assigns the result to _flags (COMP) */
 struct comp_var_args {
+    ProcessRegister *emu;
+    int jump;
     int **a, **b;
     char comp;
 };
