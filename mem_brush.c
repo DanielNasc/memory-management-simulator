@@ -1,6 +1,7 @@
 #include "mem_brush.h"
 #include "utils.h"
 #include "globals.h"
+#include <limits.h>
 #include <stdio.h>
 
 
@@ -228,4 +229,90 @@ void clear_partition(int *from, int *to)
 {
     while (from != to)
         *((from)++) = EOF;
+}
+
+bool allocateFirstFit(StackPartition *partition, size_t size, Segment *allocatedSegment) {
+    int *current = partition->head;
+    int *end = partition->tail;
+    int *startOfSegment = NULL;
+    
+    while (current < end) {
+        // Find a large enough empty space
+        if (current + size <= end) {
+            startOfSegment = current;
+            break;
+        }
+        current++;
+    }
+    
+    if (startOfSegment) {
+        // Allocate the segment
+        partition->head = startOfSegment + size;
+        allocatedSegment->start = startOfSegment;
+        allocatedSegment->end = startOfSegment + size;
+        return true;
+    } else {
+        // No space available
+        return false;
+    }
+}
+
+bool allocateBestFit(StackPartition *partition, size_t size, Segment *allocatedSegment) {
+    int *current = partition->head;
+    int *end = partition->tail;
+    int *startOfSegment = NULL;
+    int minSize = INT_MAX; // Minimum size initially set as maximum
+    
+    while (current < end) {
+        // Find a large enough empty space
+        if (current + size <= end) {
+            int currentSize = current + size - current;
+            if (currentSize < minSize) {
+                minSize = currentSize;
+                startOfSegment = current;
+            }
+        }
+        current++;
+    }
+    
+    if (startOfSegment) {
+        // Allocate the segment
+        partition->head = startOfSegment + size;
+        allocatedSegment->start = startOfSegment;
+        allocatedSegment->end = startOfSegment + size;
+        return true;
+    } else {
+        // No space available
+        return false;
+    }
+}
+
+bool allocateWorstFit(StackPartition *partition, size_t size, Segment *allocatedSegment) {
+    int *current = partition->head;
+    int *end = partition->tail;
+    int *startOfSegment = NULL;
+    int maxSize = 0; // Maximum size initially set to zero
+    
+    while (current < end) {
+        // Find a large enough empty space
+        if (current + size <= end) {
+            int currentSize = current + size - current;
+            if (currentSize > maxSize) {
+                maxSize = currentSize;
+                startOfSegment = current;
+            }
+        }
+        current++;
+    }
+    
+    if (startOfSegment) {
+        // Allocate the segment
+        partition->head = startOfSegment + size;
+        allocatedSegment->start = startOfSegment;
+        allocatedSegment->end = startOfSegment + size;
+        return true;
+    } else {
+        // No space available
+        return false;
+    }
 }

@@ -95,3 +95,12 @@ int step_proc(ProcessRegister * const);
 
 /* Clean a partition "from" first pointer arg "to" second  */
 void clear_partition(int *, int *);
+
+/* Function to allocate space in StackPartition using First Fit */
+bool allocateFirstFit(StackPartition *partition, size_t size, Segment *allocatedSegment);
+
+/* Function to allocate space in StackPartition using Best Fit */
+bool allocateBestFit(StackPartition *partition, size_t size, Segment *allocatedSegment);
+
+/* Function to allocate space in StackPartition using Worst Fit */
+bool allocateWorstFit(StackPartition *partition, size_t size, Segment *allocatedSegment);

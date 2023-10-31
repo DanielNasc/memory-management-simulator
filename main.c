@@ -86,7 +86,7 @@ void print_chicko(char const *s, ...)
             case '\n': lines++; break;
             case '%':
                 switch (*++s) {
-                    case 'a':
+                    case 'a': ;
                         void (* action)(void) = va_arg(ap, void (*)(void));
                         fflush(stdout); // In case of skip mode
                         action();
