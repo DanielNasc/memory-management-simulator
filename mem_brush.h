@@ -97,13 +97,13 @@ int step_proc(ProcessRegister * const);
 void clear_partition(int *, int *);
 
 /* Function to allocate space in StackPartition using First Fit */
-bool allocateFirstFit(StackPartition *emptySpace, size_t size, Segment *allocatedSegment);
+bool allocateFirstFit(Segment *emptySpaces, size_t size, Segment *allocatedSegment);
 
 /* Function to allocate space in StackPartition using Best Fit */
-bool allocateBestFit(StackPartition *emptySpace, size_t size, Segment *allocatedSegment);
+bool allocateBestFit(Segment *emptySpaces, size_t size, Segment *allocatedSegment);
 
 /* Function to allocate space in StackPartition using Worst Fit */
-bool allocateWorstFit(StackPartition *emptySpace, size_t size, Segment *allocatedSegment);
+bool allocateWorstFit(Segment *emptySpaces, size_t size, Segment *allocatedSegment);
 
 /* Function to calculate empty spaces between occupied partitions */
-StackPartition* calculateEmptySpaces(StackPartition *occupiedPartitions, size_t numOccupied, StackPartition *emptySpaces, size_t *numEmpty);
+Segment* calculateEmptySpaces(Segment *occupiedPartitions, size_t numOccupied, size_t *numEmpty);
