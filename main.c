@@ -476,6 +476,7 @@ void boot()
                 print_chicko("Agora que temos espaço o suficiente podemos colocá-lo...\n"
                             "Mas onde vamos por ele?");
                 // TODO -> <simular first fit (alocando no começo)>
+                allocateFirstFit((StackPartition){ .head=_raw_end, lim=_raw_end+10 }, 20);
             }; break;
             case 21: {
                 print_chicko("Faz sentido, no primeiro espaço. Mas, Bem, a gente pode se\n"

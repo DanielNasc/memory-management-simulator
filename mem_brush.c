@@ -231,9 +231,9 @@ void clear_partition(int *from, int *to)
         *((from)++) = EOF;
 }
 
-bool allocateFirstFit(StackPartition *partition, size_t size, Segment *allocatedSegment) {
-    int *current = partition->head;
-    int *end = partition->tail;
+bool allocateFirstFit(StackPartition *emptySpaces, size_t size, Segment *allocatedSegment) {
+    int *current = emptySpace->head;
+    int *end = emptySpace->tail;
     int *startOfSegment = NULL;
     
     while (current < end) {
@@ -247,7 +247,7 @@ bool allocateFirstFit(StackPartition *partition, size_t size, Segment *allocated
     
     if (startOfSegment) {
         // Allocate the segment
-        partition->head = startOfSegment + size;
+        emptySpace->head = startOfSegment + size;
         allocatedSegment->start = startOfSegment;
         allocatedSegment->end = startOfSegment + size;
         return true;
@@ -257,9 +257,9 @@ bool allocateFirstFit(StackPartition *partition, size_t size, Segment *allocated
     }
 }
 
-bool allocateBestFit(StackPartition *partition, size_t size, Segment *allocatedSegment) {
-    int *current = partition->head;
-    int *end = partition->tail;
+bool allocateBestFit(StackPartition *emptySpaces, size_t size, Segment *allocatedSegment) {
+    int *current = emptySpace->head;
+    int *end = emptySpace->tail;
     int *startOfSegment = NULL;
     int minSize = INT_MAX; // Minimum size initially set as maximum
     
@@ -277,7 +277,7 @@ bool allocateBestFit(StackPartition *partition, size_t size, Segment *allocatedS
     
     if (startOfSegment) {
         // Allocate the segment
-        partition->head = startOfSegment + size;
+        emptySpace->head = startOfSegment + size;
         allocatedSegment->start = startOfSegment;
         allocatedSegment->end = startOfSegment + size;
         return true;
@@ -287,9 +287,9 @@ bool allocateBestFit(StackPartition *partition, size_t size, Segment *allocatedS
     }
 }
 
-bool allocateWorstFit(StackPartition *partition, size_t size, Segment *allocatedSegment) {
-    int *current = partition->head;
-    int *end = partition->tail;
+bool allocateWorstFit(StackPartition *emptySpaces, size_t size, Segment *allocatedSegment) {
+    int *current = emptySpace->head;
+    int *end = emptySpace->tail;
     int *startOfSegment = NULL;
     int maxSize = 0; // Maximum size initially set to zero
     
@@ -307,7 +307,7 @@ bool allocateWorstFit(StackPartition *partition, size_t size, Segment *allocated
     
     if (startOfSegment) {
         // Allocate the segment
-        partition->head = startOfSegment + size;
+        emptySpace->head = startOfSegment + size;
         allocatedSegment->start = startOfSegment;
         allocatedSegment->end = startOfSegment + size;
         return true;
@@ -315,4 +315,49 @@ bool allocateWorstFit(StackPartition *partition, size_t size, Segment *allocated
         // No space available
         return false;
     }
+}
+
+/*
+Inputs:
+    occupiedPartitions: occupied partition array
+    numOccupied: number of occupied partitions
+    numEmpty: pointer to the number of empty partitions
+Output:
+    emptySpaces: array that will store empty partitions
+
+*/
+StackPartition* calculateEmptySpaces(StackPartition *occupiedPartitions, size_t numOccupied, size_t *numEmpty) {
+    // Initializes the number of empty partitions to 0
+    *numEmpty = 0;
+    // Pointer to the end of the last occupied partition
+    int *lastEnd = NULL;
+
+    StackPartition *emptySpaces = (StackPartition *)malloc(numOccupied * sizeof(StackPartition));
+
+    if (emptySpaces == NULL) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < numOccupied; i++) {
+        // First partition occupied
+        if (lastEnd == NULL) {
+            lastEnd = occupiedPartitions[i].tail;
+        }
+        
+        else {
+            int *start = lastEnd;
+            int *end = occupiedPartitions[i].head;
+            
+            // Empty space between partitions
+            if (start < end) {
+                emptySpaces[*numEmpty].head = start;
+                emptySpaces[*numEmpty].tail = end;
+                emptySpaces[*numEmpty].lim = end;
+                (*numEmpty)++;
+            }
+
+            lastEnd = occupiedPartitions[i].tail;
+        }
+    }
+    return emptySpaces;
 }
