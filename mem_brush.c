@@ -3,6 +3,7 @@
 #include "globals.h"
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 
 void setup_proc(ProcessRegister *const emu, Command * const commands,
@@ -367,8 +368,8 @@ Segment* calculateEmptySpaces(Segment *occupiedPartitions, size_t numOccupied, s
             
             // Empty space between partitions
             if (start < end) {
-                emptySpaces[*numEmpty].head = start;
-                emptySpaces[*numEmpty].tail = end;
+                emptySpaces[*numEmpty].start = start;
+                emptySpaces[*numEmpty].end = end;
                 (*numEmpty)++;
             }
 

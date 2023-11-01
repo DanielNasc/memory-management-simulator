@@ -236,6 +236,25 @@ void boot()
 
     /* swap */
     bool use_swap = false;
+    /* code */
+    bool code_print = true;
+
+    /* Multi programação fit */
+    /*                              X      X       X      X */
+    const int PARTY_SIZES[] = { 5, 10, 20, 15, 15, 5, 10, 5, 7, 7 };
+    struct partition {
+        int size;
+        StackPartition p;
+    } party[10];
+    int *last_place = _raw_end;
+    for (int i = 0; i < 10; ++i) {
+        party[i].size = PARTY_SIZES[i];
+        party[i].p.head = last_place;
+        party[i].p.lim = party[i].p.tail = last_place + PARTY_SIZES[i];
+        last_place += PARTY_SIZES[i];
+    }
+    int fill = 0;
+
 
 #define MAX_STEP 25
     for (size_t step = 0; step != MAX_STEP; step++) {
@@ -264,8 +283,9 @@ void boot()
         if (use_swap)
             print_memory(_swap, procs, threads_n);
 
-        for (int i = 0; i < threads_n; i++)
-            print_code(procs + i);
+        if (code_print)
+            for (int i = 0; i < threads_n; i++)
+                print_code(procs + i);
 
         putchar('\n');
         print_mem_hex(_mem, procs, threads_n);
@@ -438,6 +458,8 @@ void boot()
                             "por quê não há espaço o suficiente na máquina.");
                 print_chicko("Podemos resolver isso, balanceando o uso da memória.");
                 // TODO -> <mostrar alocação de tamanhos diferentes>
+                clear_partition(_raw_end, _mem + _mem_size);
+                code_print = use_swap = false;
             }; break;
             case 18: {
                 // print_chicko("Ok! Agora vou te mostrar algo legal... Algo PERIGOSO!!! ☠️ "
@@ -459,41 +481,91 @@ void boot()
                 //             "nós chamamos ele de" CLIS_CK_BOLD("NULL") ".\nÉ uma exceção especial "
                 //             "pra facilitar o trabalho de alguns programadores.\n"
                 //             "Nós chamamos isso de " CLIS_CK_EMPHASIS("Null pointer Exception"));
-
-                print_chicko("Bem, você já entendeu como processos funcionam. Vamos ignorar\n"
-                            "esta parte por enquanto, e focar em entender o que acontece\n"
-                            "quando há " CLIS_CK_BOLD("muitos processos") " na memória!");
+                print_chicko("%sBem, você já entendeu como processos funcionam. Vamos ignorar" CLIS_RESET
+                            "\n" CLIS_CHICKO "esta parte por enquanto, e focar em entender o que acontece" CLIS_RESET
+                            "\n" CLIS_CHICKO "quando há " CLIS_CK_BOLD("muitos processos") " na memória!%n", (skip_case == 18 ? SKIP_ALL : 0));
+                skip_case = 18;
                 // TODO -> <simulação com vários processos (sem código), alguns encerrando>
+
+                for (int i = 0; i < 8; ++i)
+                    if (party[i].p.head + fill < party[i].p.lim)
+                        *(party[i].p.head + fill) = (i + 1);
+
+                step--;
+                if (fill == 20)
+                    step++;
+                else
+                    fill++;
+
+                msleep(150);
             }; break;
             case 19: {
-                print_chicko("Precisamos encaixar este novo processo, mas não há espaço o\n"
-                            "suficiente no momento, nós vamos então esperar pelos outros\n"
-                            "encerrarem para inserí-lo. Ou, eu posso mover alguns deles de\n"
-                            "menor prioridade para a swap, hihi 🤓");
+                print_chicko("Precisamos encaixar " CLIS_CK_EMPHASIS("um novo processo de tamanho 7")
+                             ", mas não há espaço o" CLIS_RESET
+                             "\n" CLIS_CHICKO "suficiente no momento, nós vamos então esperar pelos outros" CLIS_RESET
+                             "\n" CLIS_CHICKO "encerrarem para inserí-lo. Ou, eu posso mover alguns deles de" CLIS_RESET
+                             "\n" CLIS_CHICKO "menor prioridade para a swap, hihi 🤓");
+
+                for (int i = 0; i < 20; ++i) {
+                    if (party[1].p.head + i < party[1].p.lim)
+                        *(party[1].p.head + i) = EOF;
+
+                    if (party[3].p.head + i < party[3].p.lim)
+                        *(party[3].p.head + i) = EOF;
+
+                    if (party[5].p.head + i < party[5].p.lim)
+                        *(party[5].p.head + i) = EOF;
+
+                    if (party[7].p.head + i < party[7].p.lim)
+                        *(party[7].p.head + i) = EOF;
+                }
+
                 // TODO -> <simulação com vários processos, mais deles encerrando>
+                
             }; break;
             case 20: {
                 print_chicko("Agora que temos espaço o suficiente podemos colocá-lo...\n"
                             "Mas onde vamos por ele?");
+                
+                for (int *i = _raw_end + 5; i < (_raw_end + 6 + 7); ++i)
+                    *i = 10;
                 // TODO -> <simular first fit (alocando no começo)>
-                allocateFirstFit((StackPartition){ .head=_raw_end, lim=_raw_end+10 }, 20);
+                
+                // for (int i = 0; i < (sizeof(partitions) / sizeof(struct party)); ++i) {
+                //     partitions[i].size = (i + 1) * 5;
+                //     partitions[i].p = (StackPartition){
+                //         .head=_raw_end+10
+                //     };
+                // }
+                // 
+                // allocateFirstFit((StackPartition){ .head=_raw_end, lim=_raw_end+10 }, 20);
+                // for (int i = 0; i < ; ++i) 
             }; break;
             case 21: {
                 print_chicko("Faz sentido, no primeiro espaço. Mas, Bem, a gente pode se\n"
                             "preparar melhor para este problema do espaço no futuro.\n"
                             "Que tal inserirmos em outro local?! 🧐");
+                for (int *i = _raw_end + 5; i < (_raw_end + 6 + 7); ++i)
+                    *i = EOF;
+                for (int *i = party[6].p.lim; i < (party[6].p.lim + 7); ++i)
+                    *i = 10;
                 // TODO -> <simulação best fit>
             }; break;
             case 22: {
                 print_chicko("Eu decidi colocar ele no melhor lugar, onde o processo vai deixar\n"
                             "lacunas de espaço menores. Mas nós podemos fazer um pouco diferente!");
+                for (int *i = party[6].p.lim; i < (party[6].p.lim + 7); ++i)
+                    *i = EOF;
+                for (int *i = party[2].p.lim; i < (party[2].p.lim + 7); ++i)
+                    *i = 10;
                 // TODO -> <simulação worst fit>
             }; break;
             case 23: {
                 print_chicko("Dessa vez eu decidi colocar ele no pior lugar? Por quê, você me pergunta?");
                 print_chicko("Olha, os próximos processos vão ter tooodo esse espaço livre\n"
                             "pra caber ali, isso é bom, não é mesmo?");
-
+                for (int *i = party[2].p.lim + 7; i < (party[2].p.lim + 7 + 7); ++i)
+                    *i = 10;
                 // print_chicko("Bem, eu não estou satisfeito. Ainda há espaço que não estamos usando...\n"
                 //             "E que tal se dividirmos o processo em pedaços?");
                 // TODO -> <simulação de quebra do processo> (IGNORAR)
@@ -505,11 +577,11 @@ void boot()
                 //             CLIS_CK_EMPHASIS("TLB (Translation look-aside buffer)")
                 //             "\ne meu poderoso " CLIS_CK_UNDER("MMU") "! h3h3");
                 // TODO -> <apresentação da tabela de endereços> (IGNORAR)
+
+                print_chicko("Então, é isso... Até mais!");
             } break;
             case MAX_STEP: {
                 // print_chicko("Pronto! Agora sim!");
-
-                print_chicko("Então, é isso... Até mais!");
             }; break;
             default: break;
         }
