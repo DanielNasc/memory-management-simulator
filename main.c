@@ -441,12 +441,16 @@ void boot()
             case 16: {
                 print_chicko("É isso, eu tenho dois corações! h3h3");
 
-                print_chicko("Você deve ter notado os endereços que os programas estão usando colidem.\n"
-                            "Na verdade, nós não estamos usando os endereços da memória física.\n"
+                print_chicko("Você deve ter notado os endereços que os programas estão usando colidem."
+                             CLIS_RESET "\n" CLIS_CHICKO
+                            "Na verdade, nós não estamos usando os endereços da memória física."
+                             CLIS_RESET "\n" CLIS_CHICKO
                             "Isso facilita muitos processos pra nós.");
-                print_chicko("Esse endereço (virtual) pode ser atribuído em tempo de compilação,\n"
+                print_chicko("Esse endereço (virtual) pode ser atribuído em tempo de compilação,"
+                             CLIS_RESET "\n" CLIS_CHICKO
                             "tempo de carga, ou em tempo de execução, chamamos ele de memória lógica.");
-                print_chicko("Eu tenho um circuito especial pra lidar com isso no meu cérebro.\n"
+                print_chicko("Eu tenho um circuito especial pra lidar com isso no meu cérebro."
+                             CLIS_RESET "\n" CLIS_CHICKO
                             CLIS_CK_EMPHASIS("O MMU!") " Ele faz a tradução dos endereços e também "
                             "a proteção deles entre processos.\nNote que o endereçamento físico"
                             "é realocado sempre que manipulamos a\nlocalização dos processos"
@@ -454,7 +458,8 @@ void boot()
                 // TODO -> <Stack Overflow em um dos processos>
             }; break;
             case 17: {
-                print_chicko("Olhe, temos um problema! O segundo programa não pode continuar\n"
+                print_chicko("Olhe, temos um problema! O segundo programa não pode continuar"
+                             CLIS_RESET "\n" CLIS_CHICKO
                             "por quê não há espaço o suficiente na máquina.");
                 print_chicko("Podemos resolver isso, balanceando o uso da memória.");
                 // TODO -> <mostrar alocação de tamanhos diferentes>
@@ -542,8 +547,10 @@ void boot()
                 // for (int i = 0; i < ; ++i) 
             }; break;
             case 21: {
-                print_chicko("Faz sentido, no primeiro espaço. Mas, Bem, a gente pode se\n"
-                            "preparar melhor para este problema do espaço no futuro.\n"
+                print_chicko("Faz sentido, no " CLIS_CK_EMPHASIS("primeiro espaço")
+                            ". Mas, Bem, a gente pode se" CLIS_RESET "\n" CLIS_CHICKO
+                            "preparar melhor para este problema do espaço no futuro."
+                            CLIS_RESET "\n" CLIS_CHICKO
                             "Que tal inserirmos em outro local?! 🧐");
                 for (int *i = _raw_end + 5; i < (_raw_end + 6 + 7); ++i)
                     *i = EOF;
@@ -552,7 +559,8 @@ void boot()
                 // TODO -> <simulação best fit>
             }; break;
             case 22: {
-                print_chicko("Eu decidi colocar ele no melhor lugar, onde o processo vai deixar\n"
+                print_chicko("Eu decidi colocar ele no " CLIS_CK_EMPHASIS("melhor lugar")
+                            ", onde o processo vai deixar" CLIS_RESET "\n" CLIS_CHICKO
                             "lacunas de espaço menores. Mas nós podemos fazer um pouco diferente!");
                 for (int *i = party[6].p.lim; i < (party[6].p.lim + 7); ++i)
                     *i = EOF;
@@ -561,8 +569,10 @@ void boot()
                 // TODO -> <simulação worst fit>
             }; break;
             case 23: {
-                print_chicko("Dessa vez eu decidi colocar ele no pior lugar? Por quê, você me pergunta?");
-                print_chicko("Olha, os próximos processos vão ter tooodo esse espaço livre\n"
+                print_chicko("Dessa vez eu decidi colocar ele no " CLIS_CK_EMPHASIS("pior lugar?")
+                             " Por quê, você me pergunta?");
+                print_chicko("Olha, os próximos processos vão ter tooodo esse espaço livre"
+                             CLIS_RESET "\n" CLIS_CHICKO
                             "pra caber ali, isso é bom, não é mesmo?");
                 for (int *i = party[2].p.lim + 7; i < (party[2].p.lim + 7 + 7); ++i)
                     *i = 10;
