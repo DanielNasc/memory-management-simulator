@@ -146,6 +146,7 @@ void boot()
 
 #define MAX_NAME_LEN 120
     char scope_name[MAX_NAME_LEN] = "main";
+    // char second_process_scope_name
     struct goto_scope_args main_scope = {
         .emu=&procs[0], .pc=0, .scope_name=scope_name
     };
@@ -168,6 +169,15 @@ void boot()
         { .line="}", .call=NULL, .args=NULL },
     };
 
+    // Command to second process
+    struct set_var_args sva2 = { .emu=&procs[1], .mem=_raw_end, .value=25 };
+    Command proc_second[] = {
+        { .line="int main() {", .call=NULL, .args=NULL },
+        { .line="\tint b;", .call=inc_stack, .args=&procs[1] },
+        { .line="\tb = 25", .call=set_var, .args=&sva2 },
+        { .line="\tprint(\"This is the second process\")", .call=NULL, .args=NULL },
+        { .line="}", .call=NULL, .args=NULL },
+    };
     // Recursive process
     char rec_header_fmt[] = "int rec(int i = %d)";
     char rec_name[] = "rec";
@@ -405,6 +415,26 @@ void boot()
                              "Agora vamos ver o que acontecesse quando há vários "
                              "programas sendo executados.");
                 // TODO #6 -> Implementar multiprogramação
+                
+                use_swap = false;
+                threaded_mode = false;
+                // reset and do recursion again
+                procs[0].args.values.start = &var_a;
+                procs[0].args.values.end = procs[0].args.values.start + procs[0].args.n;
+                procs[0].pc = 0;
+                procs[0].swap.head = procs[0].swap.tail = procs[0].swap.lim = NULL;
+                // Copy process and move partition
+                procs[1] = procs[0];
+                procs[1].stack.tail = procs[1].stack.head = procs[1].stack.lim + 1;
+                procs[1].stack.lim = _mem + _mem_size;
+                procs[1].scope_name = scope_name;
+                threads_n = 2;
+                int *part_end = _raw_end + ((_mem + _mem_size) - _raw_end) / 2;
+                setup_proc(&procs[0], proc_tuto, sizeof(proc_tuto) / sizeof(Command), _raw_end, part_end);
+                setup_proc(&procs[1], proc_second, sizeof(proc_second) / sizeof(Command), part_end + 1, _mem + _mem_size);
+                skip &= ~SKIP_REFRESH;
+                clear_partition(_raw_end, _mem + _mem_size);
+                step++;
             }; break;
             case 14: {
                 print_chicko("Queremos tirar proveito dos recursos da máquina, então faremos "

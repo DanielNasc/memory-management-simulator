@@ -59,6 +59,7 @@ typedef struct {
     int *tail; /* where it ends */
     int *lim;  /* where it can grow to */
 } StackPartition;
+
 typedef struct process_register {
     size_t pc; // Program Counter: step of execution */
     size_t size; /* #of steps */
